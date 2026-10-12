@@ -1,0 +1,26 @@
+{
+  "name": "milk-frogs-beast-bond-sutra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A Windows desktop pet built step by step with Electron, React, and TypeScript.",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^5.0.2",
+    "electron": "^37.3.1",
+    "electron-vite": "^4.0.0",
+    "typescript": "^5.9.2"
+  }
+}
