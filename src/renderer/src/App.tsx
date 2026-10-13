@@ -1,85 +1,58 @@
-import { useEffect, useRef, useState } from 'react'
-import petImage from './assets/pet.jpg'
+import { useEffect, useRef } from 'react'
+import { getPetImageUrl, loadPetAlphaMap, loadPetDisplaySize } from './modules/AssetManager'
+import { usePetAction } from './modules/ActionModule'
+import { usePetInteraction } from './modules/PetInteraction'
+import { PetRenderer } from './modules/PetRenderer'
 
-type PetState = 'idle' | 'happy' | 'dragging'
+// App 只负责「组装」：把素材、动作、交互、渲染这几个模块接起来。
 
 function App() {
-  const [platform, setPlatform] = useState('正在连接本地应用层...')
-  const [petState, setPetState] = useState<PetState>('idle')
-  const resetStateTimer = useRef<number | null>(null)
+  const stageRef = useRef<HTMLElement>(null)
+  const alphaCanvasRef = useRef<HTMLCanvasElement | null>(null)
 
-  const resetPetStateLater = (delay: number) => {
-    if (resetStateTimer.current) {
-      window.clearTimeout(resetStateTimer.current)
-    }
-
-    resetStateTimer.current = window.setTimeout(() => {
-      resetStateTimer.current = null
-      setPetState('idle')
-    }, delay)
-  }
+  const { action, play, stop } = usePetAction()
 
   useEffect(() => {
-    void window.desktopPet.getSystemInfo().then((systemInfo) => {
-      setPlatform(`运行于 ${systemInfo.platform}`)
-    })
+    // 按素材尺寸设置窗口大小
+    void loadPetDisplaySize()
+      .then(({ width, height }) => window.desktopPet.setSize(width, height))
+      .catch(() => {})
 
-    const removeWindowMovedListener = window.desktopPet.onWindowMoved(() => {
-      setPetState('dragging')
-      resetPetStateLater(450)
-    })
-
-    return () => {
-      removeWindowMovedListener()
-      if (resetStateTimer.current) {
-        window.clearTimeout(resetStateTimer.current)
-      }
-    }
+    // 建 alpha 图（点击穿透判定用）
+    void loadPetAlphaMap()
+      .then((canvas) => {
+        alphaCanvasRef.current = canvas
+      })
+      .catch(() => {})
   }, [])
 
-  const handlePetClick = () => {
-    setPetState('happy')
-    resetPetStateLater(1600)
-  }
-
-  const stateText = {
-    idle: '正在安静待机',
-    happy: '被摸到了，好开心',
-    dragging: '跟着你一起移动',
-  }[petState]
+  const { onPointerDown, onPointerMove, onPointerUp } = usePetInteraction(
+    stageRef,
+    alphaCanvasRef,
+    {
+      onTap: () => play('happy'),
+      onDragStart: () => {
+        play('drag')
+        window.desktopPet.dragStart()
+      },
+      onDragMove: () => window.desktopPet.dragMove(),
+      onDragEnd: () => {
+        stop()
+        window.desktopPet.dragEnd()
+      },
+    },
+  )
 
   return (
-    <main className="pet-stage" aria-label="桌宠窗口">
-      <section className="pet-card">
-        <div className="window-actions no-drag">
-          <button type="button" aria-label="隐藏桌宠" title="隐藏桌宠" onClick={() => window.desktopPet.hide()}>
-            −
-          </button>
-          <button type="button" aria-label="关闭程序" title="关闭程序" onClick={() => window.desktopPet.close()}>
-            ×
-          </button>
-        </div>
-
-        <div
-          className={`pet-illustration pet-state-${petState} no-drag`}
-          aria-label="点击桌宠互动"
-          role="button"
-          tabIndex={0}
-          onClick={handlePetClick}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              handlePetClick()
-            }
-          }}
-        >
-          <img className="pet-photo" src={petImage} alt="桌宠" draggable={false} />
-        </div>
-
-        <p className="pet-name">小兽正在醒来</p>
-        <p className="pet-state">{stateText}</p>
-        <p className="pet-status">{platform}</p>
-        <p className="drag-hint">拖动卡片移动窗口 · 点击角色互动</p>
-      </section>
+    <main
+      className="pet-stage"
+      ref={stageRef}
+      aria-label="桌宠"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+    >
+      <PetRenderer imageUrl={getPetImageUrl()} action={action} />
     </main>
   )
 }

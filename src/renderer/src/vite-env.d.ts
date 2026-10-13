@@ -10,6 +10,11 @@ interface DesktopPetApi {
   hide: () => void
   show: () => void
   close: () => void
+  setSize: (width: number, height: number) => void
+  dragStart: () => void
+  dragMove: () => void
+  dragEnd: () => void
+  setIgnoreMouse: (ignore: boolean) => void
   onWindowMoved: (callback: () => void) => () => void
 }
 
