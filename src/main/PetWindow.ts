@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, screen, Tray } from 'electron'
 import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { ensureHomeWindow } from './HomeWindow'
 
 // PetWindow：负责窗口本身的一切——创建、尺寸、位置保存、拖动移窗、
 // 点击穿透、系统托盘、「回到屏幕内」。渲染进程通过 IPC 调用这里的能力。
@@ -10,6 +11,7 @@ let tray: Tray | null = null
 let positionSaveTimer: NodeJS.Timeout | null = null
 let dragStartWindow: { x: number; y: number } | null = null
 let dragStartCursor: { x: number; y: number } | null = null
+let dragStartSize: { width: number; height: number } | null = null
 
 function positionFile(): string {
   return join(app.getPath('userData'), 'window-position.json')
@@ -74,10 +76,12 @@ function centerPetWindow() {
 
   const { workArea } = screen.getPrimaryDisplay()
   const [width, height] = mainWindow.getSize()
-  mainWindow.setPosition(
-    Math.round(workArea.x + (workArea.width - width) / 2),
-    Math.round(workArea.y + (workArea.height - height) / 2),
-  )
+  mainWindow.setBounds({
+    x: Math.round(workArea.x + (workArea.width - width) / 2),
+    y: Math.round(workArea.y + (workArea.height - height) / 2),
+    width,
+    height,
+  })
   mainWindow.show()
   mainWindow.focus()
 }
@@ -108,6 +112,10 @@ function createTray() {
       {
         label: '回到屏幕内',
         click: centerPetWindow,
+      },
+      {
+        label: '打开首页',
+        click: ensureHomeWindow,
       },
       { type: 'separator' },
       {
@@ -189,36 +197,56 @@ function registerIpcHandlers() {
     mainWindow.setSize(Math.round(width), Math.round(height))
   })
 
-  ipcMain.on('pet:drag-start', () => {
+  ipcMain.on('pet:drag-start', (_event, screenX: number, screenY: number) => {
     if (!mainWindow || mainWindow.isDestroyed()) {
       return
     }
 
-    const [x, y] = mainWindow.getPosition()
-    dragStartWindow = { x, y }
-    const point = screen.getCursorScreenPoint()
-    dragStartCursor = { x: point.x, y: point.y }
-  })
-
-  ipcMain.on('pet:drag-move', () => {
-    if (!mainWindow || !dragStartWindow || !dragStartCursor) {
+    if (typeof screenX !== 'number' || typeof screenY !== 'number') {
       return
     }
 
-    const point = screen.getCursorScreenPoint()
-    mainWindow.setPosition(
-      dragStartWindow.x + (point.x - dragStartCursor.x),
-      dragStartWindow.y + (point.y - dragStartCursor.y),
-    )
+    const [x, y] = mainWindow.getPosition()
+    const [width, height] = mainWindow.getSize()
+    dragStartWindow = { x, y }
+    dragStartCursor = { x: screenX, y: screenY }
+    dragStartSize = { width, height }
+  })
+
+  ipcMain.on('pet:drag-move', (_event, screenX: number, screenY: number) => {
+    if (!mainWindow || !dragStartWindow || !dragStartCursor || !dragStartSize) {
+      return
+    }
+
+    if (typeof screenX !== 'number' || typeof screenY !== 'number') {
+      return
+    }
+
+    // 用 setBounds 并带上固定尺寸：Windows 缩放 ≠ 100% 时，
+    // setPosition 会让无边框透明窗口在拖动中越拖越大
+    mainWindow.setBounds({
+      x: dragStartWindow.x + (screenX - dragStartCursor.x),
+      y: dragStartWindow.y + (screenY - dragStartCursor.y),
+      width: dragStartSize.width,
+      height: dragStartSize.height,
+    })
   })
 
   ipcMain.on('pet:drag-end', () => {
     dragStartWindow = null
     dragStartCursor = null
+    dragStartSize = null
   })
 
   ipcMain.on('pet:set-ignore-mouse', (_event, ignore: boolean) => {
     mainWindow?.setIgnoreMouseEvents(ignore, { forward: true })
+  })
+
+  // 首页「动作」页触发某个动作，这里转发给桌宠窗口
+  ipcMain.on('pet:trigger-action', (_event, action: unknown) => {
+    if (typeof action === 'string') {
+      sendToPet('pet:trigger-action', action)
+    }
   })
 }
 
@@ -238,4 +266,9 @@ export function ensurePetWindow() {
 
 export function saveWindowPositionOnQuit() {
   saveWindowPosition()
+}
+
+// 给桌宠窗口发消息（其他模块用它来通知渲染层，比如「换图」）
+export function sendToPet(channel: string, ...args: unknown[]) {
+  mainWindow?.webContents.send(channel, ...args)
 }

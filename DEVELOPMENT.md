@@ -325,6 +325,207 @@ Step 3（点击穿透）和 Step 4（点击 vs 拖动）其实是同一件事：
 
 ---
 
+## 2026-10-14 — Phase B · Step 1：首页窗口 + 导入图片打通
+
+### 背景
+用户要在托盘「回到屏幕内」旁边加一项「打开首页」——弹出第二个窗口（桌宠项目的首页/控制台），
+里面分三个并列模块：导入（加新图）、动作（触发动作）、桌宠样式（管理导入过的图片库）。
+本次先打通「首页窗口 + 导入页」，动作页和样式页先占位。
+
+### 改了哪些文件
+- 新增 `src/main/HomeWindow.ts`：普通带边框的首页窗口（480×640，非透明、非置顶、有任务栏按钮）。
+  和桌宠共用同一个渲染页面，用 `?view=home` 区分。
+- 新增 `src/main/PetAssets.ts`：图片导入 + 持久化 + 通知换图。
+  - `pet:choose-image`：弹系统文件框（jpg/jpeg/png/webp/gif），把图读成 data URL 返回。
+  - `pet:apply-image`：保存当前图到 `userData/current-pet.json`，并 `sendToPet('pet:image-changed', ...)`。
+  - `pet:get-current-image`：启动时首页/桌宠向主进程要当前图。
+- 改 `src/main/PetWindow.ts`：托盘菜单加「打开首页」（紧挨「回到屏幕内」）；新增导出 `sendToPet()`。
+- 改 `src/main/index.ts`：启动时 `initPetAssets()`。
+- 改 `src/preload/index.ts` + `vite-env.d.ts`：加 `chooseImage / applyImage / getCurrentImage / onPetImageChanged` 四个桥接。
+- 新增 `src/renderer/src/HomeApp.tsx` + `home.css`：首页，三个标签页（导入/动作/桌宠样式），导入页可用。
+- 改 `src/renderer/src/main.tsx`：按 `?view=home` 渲染 HomeApp 还是 App；首页时给 `<html>` 加 `.home-page` 类。
+- 改 `src/renderer/src/modules/AssetManager.ts`：`getPetImageUrl` → `getDefaultPetImage`，
+  `loadPetDisplaySize` / `loadPetAlphaMap` 改成接收 `imageUrl` 参数（不再写死 pet.jpg）。
+- 改 `src/renderer/src/App.tsx`：加 `imageUrl` state；启动时 `getCurrentImage()` 换图、
+  `onPetImageChanged` 跟随换图、图片变化时重新算窗口尺寸 + 重建 alpha 图。
+
+### 关键点（教学）
+- 两个窗口通信靠主进程中转：首页 `applyImage` → 主进程保存 + `webContents.send` → 桌宠窗口收到换图。
+- 首页和桌宠共用同一个 HTML/bundle，用 URL 查询参数 `?view=home` 区分渲染哪个 React 组件；
+  开发时 `loadURL(url + '?view=home')`，打包后 `loadFile(path, { query: { view: 'home' } })`。
+- 共用 bundle 会让 CSS 串窗口：用 `document.documentElement.classList.add('home-page')`
+  + `html.home-page ...` 前缀，保证首页样式不影响透明的小桌宠窗口。
+
+### 验证结果（实际跑过）
+- `npm run typecheck` ✅
+- `npm run build` ✅（主进程 out/main/index.js 9.25kB；渲染进程 35 个模块，含 HomeApp）
+- 待用户 `npm run dev` 手动确认（改了主进程/preload，需重启 dev）：
+  1. 托盘出现「打开首页」，点开出现首页窗口；
+  2. 「导入」页点「选择图片」→ 选图 → 出现预览 → 点「设为桌宠」→ 小桌宠换成这张图；
+  3. 重启 app 后，桌宠仍是导入的图（持久化生效）。
+
+### 待办 / 下一步
+- 动作页、桌宠样式页填内容（样式页 = 管理导入过的图片库）。
+- 目前图片以 data URL 存进 `current-pet.json`，大图会占内存/体积，后续可改成「存图片文件 + 只存路径」。
+- Phase B · Step 2：接 `@imgly/background-removal` 自动抠图。
+
+---
+
+## 2026-10-14 — Phase B · Step 1（续）：桌宠样式 = 图片库
+
+### 背景
+把「导入」从只存一张图，升级成存一个图片库；「桌宠样式」页做成图库，能来回切换/删除。
+
+### 改了哪些文件
+- 改 `src/main/PetAssets.ts`：单图 `current-pet.json` 换成图片库 `pet-library.json`（`{ images: [{id,name,dataUrl}], currentId }`）。
+  - `pet:choose-image` 现在返回 `{ dataUrl, name }`（name 取原文件名）。
+  - `pet:apply-image`：生成 id 后 push 进图库并设为当前 + 持久化 + 广播。
+  - 新增 `pet:get-library`（返回整个图库）、`pet:select-image`（选当前，id 传 null 表示恢复默认）、
+    `pet:delete-image`（删图；删的是当前图就自动切到剩下的第一张，没了就回默认）。
+  - `pet:image-changed` 广播的负载改成 `string | null`（null = 用默认图）。
+  - 加旧数据迁移：若只有旧的 `current-pet.json`，自动挪进新图库。
+- 改 `src/preload/index.ts` + `vite-env.d.ts`：加 `getLibrary / selectImage / deleteImage`，
+  `chooseImage` 返回类型改对象，`onPetImageChanged` 回调参数改 `string | null`。
+- 改 `src/renderer/src/HomeApp.tsx`：加 `library` state；「桌宠样式」页做成缩略图网格——
+  点卡片切换、当前卡片绿框 + 「使用中」角标、导入图可删除（stopPropagation 防止误触切换）、
+  顶部有「默认桌宠」卡片可切回默认。
+- 改 `src/renderer/src/App.tsx`：`onPetImageChanged` 收到 null 时回退 `getDefaultPetImage()`。
+- 改 `src/renderer/src/home.css`：加 `.home-grid / .home-card / .home-card--current / .home-card-badge / .home-card-delete` 样式。
+
+### 验证结果（实际跑过）
+- `npm run typecheck` ✅
+- `npm run build` ✅（主进程 out/main/index.js 11.43kB）
+- 待用户 `npm run dev` 手动确认（改了主进程/preload，需重启 dev）：
+  1. 导入多张图后，「桌宠样式」页出现这些图的缩略图；
+  2. 点不同卡片，小桌宠跟着切换；点「默认桌宠」切回占位图；
+  3. 删一张图：若是当前图会自动切走；重启后图库还在。
+
+### 待办 / 下一步
+- 动作页：预览/触发桌宠动作（待机 / 开心 / 拖动…）。
+- 图片库目前每张图以 data URL 存进 `pet-library.json`，图多/图大时文件会很大，
+  后续改成「图片存成文件、json 只存路径」。
+- Phase B · Step 2：接 `@imgly/background-removal` 自动抠图。
+
+---
+
+## 2026-10-14 — Phase B · Step 1（再续）：动作页打通，首页三页齐了
+
+### 背景
+首页最后一个空标签「动作」页：在首页点「预览」，桌面上的桌宠当场做对应动作。
+
+### 改了哪些文件
+- 改 `src/main/PetWindow.ts`：`registerIpcHandlers` 加 `pet:trigger-action`——
+  收到后 `sendToPet('pet:trigger-action', action)` 转发给桌宠窗口。
+- 改 `src/preload/index.ts` + `vite-env.d.ts`：加 `triggerAction(action)` 和 `onTriggerAction(cb)`。
+- 改 `src/renderer/src/App.tsx`：订阅 `onTriggerAction`，`happy` → `play('happy')`、`idle` → `stop()`。
+- 改 `src/renderer/src/HomeApp.tsx`：动作页列出动作卡片（待机 / 开心），点「预览」调 `triggerAction`。
+- 改 `src/renderer/src/home.css`：加 `.home-action-list / .home-action-item` 等样式。
+
+### 关键点（教学）
+- 触发动作也走「首页 → 主进程 → 桌宠窗口」这条中转，和换图一个套路。
+- 现在可预览的动作只有 idle/happy（drag 是拖动时进入的状态，不适合做成按钮）。
+
+### 验证结果（实际跑过）
+- `npm run typecheck` ✅
+- `npm run build` ✅（主进程 11.59kB、preload 2.04kB）
+- 待用户 `npm run dev` 确认：首页「动作」页点「开心」→ 桌宠跳两下；点「待机」→ 停下。
+
+### 首页三个标签页现状
+- 导入：选图 → 导入并设为桌宠 ✅
+- 桌宠样式：图片库，切换 / 删除 / 恢复默认 ✅
+- 动作：预览 待机 / 开心 ✅
+
+### 待办 / 下一步
+- Phase B · Step 2：接 `@imgly/background-removal` 自动抠图（导入 → 抠出人物 → 算包围盒 → 透明 PNG）。
+- 图片库目前 data URL 直接存 json，图多会很大，后续改成「图片存文件、json 存路径」。
+
+---
+
+## 2026-10-14 — 修「拖动时放大」+ 桌宠样式缩略图裁切
+
+### 背景
+1. 用户反馈桌宠样式页缩略图怪：竖图被 `object-fit: cover` + 固定 120px 高裁成横条。
+2. 用户要修「拖动时桌宠变大」（开发记录里早就标记的已知问题）。
+
+### 改了哪些文件
+- `src/renderer/src/home.css`：缩略图改成「正方形 `aspect-ratio: 1/1` + `object-fit: contain`」，整图显示不裁切。
+- 拖动坐标换算改造（去掉 `screen.getCursorScreenPoint()`，改由渲染层传屏幕坐标）：
+  - `src/renderer/src/modules/PetInteraction.ts`：按下时记录 `event.screenX/screenY`，
+    `onDragStart/onDragMove` 回调带上屏幕坐标。
+  - `src/renderer/src/App.tsx`：`dragStart(screenX, screenY)` / `dragMove(screenX, screenY)`。
+  - `src/preload/index.ts` + `vite-env.d.ts`：`dragStart/dragMove` 改为接收屏幕坐标。
+  - `src/main/PetWindow.ts`：`pet:drag-start` / `pet:drag-move` 用渲染层传来的坐标做差值，
+    不再读全局光标。
+
+### 为什么（教学）
+- 「拖动放大」疑似 Windows DPI 缩放下，主进程 `screen.getCursorScreenPoint()` 的坐标和
+  `getPosition()/setPosition()` 不在同一套坐标系，差值换算错位。
+- 改成用鼠标事件的 `screenX/screenY`（和窗口同一套 DIP 坐标）后，起点、终点、窗口位置三者对齐。
+
+### 验证结果（实际跑过）
+- `npm run typecheck` ✅
+- `npm run build` ✅
+- 待用户 `npm run dev` 确认：拖动桌宠不再变大/乱跳。
+- 若还变大，下一步怀疑「透明窗口 + 禁用 GPU 软件渲染」的合成瑕疵，可尝试去掉 index.ts 里三行
+  `disable-gpu / disable-gpu-compositing / disableHardwareAcceleration`（透明窗口需重测透明效果）。
+
+### 待办 / 下一步
+- 若拖动仍有问题：试 GPU 相关开关。
+- Phase B · Step 2：接 `@imgly/background-removal` 自动抠图。
+
+---
+
+## 2026-10-14 — 拖动变大：去掉禁用 GPU 的三行（第二次尝试）
+
+### 背景
+坐标换算修完后用户反馈拖动仍「自己变大」。按开发记录里第二个嫌疑排查：软件渲染。
+
+### 做了什么
+- `src/main/index.ts`：删掉 `disable-gpu` / `disable-gpu-compositing` / `disableHardwareAcceleration()` 三行
+  （三者重复，作用都是禁用硬件加速、改用软件渲染）。
+- 影响：应用恢复默认 GPU 渲染。
+
+### 验证结果
+- `npm run typecheck` ✅、`npm run build` ✅
+- 待用户确认两件事：
+  1. 拖动桌宠不再变大；
+  2. 透明窗口仍然正常（桌宠显示在桌面、没有黑底/白底方块）。若出现黑底，需回退此改动另想办法。
+
+### 待办
+- 若仍变大，下一条线索：显式设置 DPI 感知，或改用原生拖动（WM_NCLBUTTONDOWN / app-region）。
+- Phase B · Step 2：自动抠图。
+
+---
+
+## 2026-10-14 — 拖动变大：真正的根因和修复（setPosition → setBounds）
+
+### 背景
+坐标换算、GPU 两次尝试都没解决「拖动时自己变大」。查证后确认是 Electron 已知问题：
+**Windows 显示缩放 ≠ 100% 时，对无边框透明窗口反复调用 `setPosition()` 会越拖越大**。
+
+### 真正根因
+`setPosition(x, y)` 不带尺寸，在非 100% 缩放下位置和尺寸被混算，导致窗口尺寸被逐渐放大。
+
+### 修复
+- `src/main/PetWindow.ts`：
+  - 拖动改 `setBounds({ x, y, width, height })`，并在 drag-start 记录 `dragStartSize`，
+    每次 move 都把尺寸钉回原值。
+  - `centerPetWindow()` 的 `setPosition` 也改成 `setBounds`（带上已读取的宽高）。
+- `src/main/index.ts`：还原上一步误删的三行 GPU 开关（那不是根因，保持改动干净）。
+
+### 关键结论（教训）
+- 坐标源（screenX/screenY vs getCursorScreenPoint）和 GPU 都不是根因，是 `setPosition` 这个 API 本身。
+- 以后凡是移动无边框透明窗口，都用 `setBounds` 显式带尺寸，别用 `setPosition`。
+
+### 验证结果
+- `npm run typecheck` ✅、`npm run build` ✅
+- 待用户确认：拖动不再变大。
+
+### 待办
+- Phase B · Step 2：自动抠图。
+
+---
+
 ## 模板（下次照抄）
 
 ### 2026-xx-xx — 标题

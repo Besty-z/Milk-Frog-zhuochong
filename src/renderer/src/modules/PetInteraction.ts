@@ -9,8 +9,8 @@ const DRAG_THRESHOLD = 4
 
 export interface PetInteractionHandlers {
   onTap: () => void
-  onDragStart: () => void
-  onDragMove: () => void
+  onDragStart: (screenX: number, screenY: number) => void
+  onDragMove: (screenX: number, screenY: number) => void
   onDragEnd: () => void
 }
 
@@ -20,6 +20,7 @@ export function usePetInteraction(
   handlers: PetInteractionHandlers,
 ) {
   const downPos = useRef<{ x: number; y: number } | null>(null)
+  const downScreen = useRef<{ x: number; y: number } | null>(null)
   const isDragging = useRef(false)
   const lastIgnore = useRef<boolean | null>(null)
 
@@ -54,6 +55,7 @@ export function usePetInteraction(
     // 捕获指针：拖动时即使鼠标移出窗口，也能继续收到 move/up 事件
     event.currentTarget.setPointerCapture(event.pointerId)
     downPos.current = { x: event.clientX, y: event.clientY }
+    downScreen.current = { x: event.screenX, y: event.screenY }
     isDragging.current = false
   }
 
@@ -65,11 +67,12 @@ export function usePetInteraction(
       // 移动超过阈值 → 进入拖动
       if (!isDragging.current && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
         isDragging.current = true
-        handlers.onDragStart()
+        const start = downScreen.current ?? { x: event.screenX, y: event.screenY }
+        handlers.onDragStart(start.x, start.y)
       }
 
       if (isDragging.current) {
-        handlers.onDragMove()
+        handlers.onDragMove(event.screenX, event.screenY)
       }
     } else {
       updateIgnoreMouse(event.clientX, event.clientY)
@@ -79,6 +82,7 @@ export function usePetInteraction(
   const onPointerUp = () => {
     const wasDragging = isDragging.current
     downPos.current = null
+    downScreen.current = null
     isDragging.current = false
 
     if (wasDragging) {

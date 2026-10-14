@@ -1,6 +1,7 @@
 import { app, ipcMain } from 'electron'
 import { join } from 'node:path'
 import { ensurePetWindow, initPetWindow, saveWindowPositionOnQuit } from './PetWindow'
+import { initPetAssets } from './PetAssets'
 
 app.commandLine.appendSwitch('disable-gpu')
 app.commandLine.appendSwitch('disable-gpu-compositing')
@@ -14,6 +15,7 @@ ipcMain.handle('pet:get-system-info', () => ({
 
 app.whenReady().then(() => {
   initPetWindow()
+  initPetAssets()
 
   app.on('activate', () => {
     ensurePetWindow()
