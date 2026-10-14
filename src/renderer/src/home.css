@@ -51,6 +51,11 @@ html.home-page #root {
   font-size: 18px;
 }
 
+.home-subtitle {
+  margin: 20px 0 4px;
+  font-size: 15px;
+}
+
 .home-hint {
   color: #5a6b77;
   font-size: 13px;
@@ -88,12 +93,19 @@ html.home-page #root {
   gap: 12px;
 }
 
-.home-preview img {
+.home-preview img,
+.home-preview video {
   max-width: 200px;
   max-height: 260px;
   border-radius: 8px;
   background: #ffffff;
   border: 1px solid #d8e0e7;
+}
+
+.home-progress {
+  font-size: 13px;
+  color: #1f8f6f;
+  margin: 0;
 }
 
 .home-grid {
@@ -121,7 +133,8 @@ html.home-page #root {
   box-shadow: 0 0 0 2px rgba(31, 143, 111, 0.15);
 }
 
-.home-card img {
+.home-card img,
+.home-card video {
   width: 100%;
   aspect-ratio: 1 / 1;
   object-fit: contain;
@@ -191,4 +204,74 @@ html.home-page #root {
 
 .home-action-item .home-btn {
   margin-top: 0;
+}
+
+/* 动图动作编辑器 */
+.home-gif-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.home-scrub-preview {
+  align-self: center;
+  width: 200px;
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d8e0e7;
+  border-radius: 8px;
+  background: #eef2f5;
+}
+
+.home-scrub-preview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.home-scrub {
+  width: 100%;
+}
+
+.home-action-editor-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.home-action-editor-controls .home-btn {
+  margin-top: 0;
+}
+
+.home-input {
+  flex: 1;
+  min-width: 140px;
+  padding: 8px 10px;
+  font-size: 14px;
+  border: 1px solid #c6d2da;
+  border-radius: 6px;
+  color: #193242;
+}
+
+.home-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  color: #193242;
+  white-space: nowrap;
+}
+
+.home-action-preview {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  border: 1px solid #d8e0e7;
+  border-radius: 6px;
+  background: #eef2f5;
+  flex-shrink: 0;
 }

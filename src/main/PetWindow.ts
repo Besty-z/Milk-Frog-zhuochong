@@ -149,6 +149,8 @@ function createPetWindow() {
     skipTaskbar: true,
     hasShadow: false,
     backgroundColor: '#00000000',
+    // Alt+Tab 切窗时显示成默认桌宠的样子（窗口本体透明，图标只在切窗列表里出现）
+    icon: nativeImage.createFromPath(join(__dirname, '../../resources/icon.png')),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,

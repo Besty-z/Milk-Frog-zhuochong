@@ -7,3 +7,6 @@ Thumbs.db
 node_modules/
 out/
 dist/
+
+# 抠图模型 + wasm（由 scripts/download-bg-model.mjs 和 scripts/setup-bg-removal.mjs 生成，不进 git）
+src/renderer/public/bg-removal/
