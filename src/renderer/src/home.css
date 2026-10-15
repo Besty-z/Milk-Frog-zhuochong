@@ -7,57 +7,187 @@ html.home-page #root {
   height: auto;
   min-height: 100vh;
   overflow: auto;
-  background: #f2f5f8;
+  background: #f4edff;
+}
+
+/* 柔和的紫色渐变背景（只作用于首页，桌宠窗口保持透明） */
+html.home-page body {
+  background:
+    radial-gradient(1100px 560px at 100% -8%, rgba(167, 139, 250, 0.5), transparent 62%),
+    radial-gradient(820px 460px at -8% 18%, rgba(244, 114, 182, 0.28), transparent 58%),
+    linear-gradient(165deg, #f7f1ff 0%, #f0e7ff 46%, #fce9f6 100%);
 }
 
 .home {
   min-height: 100vh;
-  color: #193242;
-  padding-bottom: 24px;
+  color: #372a5c;
+  padding-bottom: 32px;
 }
 
+/* —— 顶部角色展示区 + 快捷操作 —— */
+.home-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 18px 18px 0;
+  padding: 18px 20px;
+  border-radius: 20px;
+  background: linear-gradient(120deg, rgba(124, 58, 237, 0.08), rgba(236, 72, 153, 0.08)), #ffffff;
+  border: 1px solid rgba(124, 58, 237, 0.14);
+  box-shadow: 0 10px 30px rgba(124, 58, 237, 0.1);
+}
+
+.home-hero-pet {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.home-hero-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #f0e9ff;
+  border: 2px solid #ffffff;
+  box-shadow: 0 6px 18px rgba(124, 58, 237, 0.22);
+  flex-shrink: 0;
+}
+
+.home-hero-avatar img,
+.home-hero-avatar video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.home-hero-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.home-hero-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  color: #9b8cc4;
+  text-transform: uppercase;
+}
+
+.home-hero-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: #2b1e55;
+}
+
+.home-hero-status {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  font-size: 12px;
+  color: #7c3aed;
+  background: #f3e8ff;
+  padding: 2px 9px;
+  border-radius: 999px;
+}
+
+.home-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.home-quick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 13px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #6d28d9;
+  background: #ffffff;
+  border: 1px solid #e4d6ff;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+
+.home-quick:hover {
+  background: #f6f0ff;
+  box-shadow: 0 6px 16px rgba(124, 58, 237, 0.18);
+  transform: translateY(-1px);
+}
+
+/* —— 标签页 —— */
 .home-tabs {
   display: flex;
-  gap: 4px;
-  padding: 12px 16px 0;
-  border-bottom: 1px solid #d8e0e7;
-  background: #ffffff;
+  gap: 6px;
+  margin: 14px 18px 0;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(124, 58, 237, 0.1);
+  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.06);
   position: sticky;
   top: 0;
+  z-index: 5;
 }
 
 .home-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   border: none;
   background: transparent;
   padding: 10px 16px;
-  font-size: 15px;
-  color: #5a6b77;
+  font-size: 14px;
+  font-weight: 600;
+  color: #7a6b9f;
   cursor: pointer;
-  border-bottom: 2px solid transparent;
+  border-radius: 10px;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.home-tab:hover {
+  color: #6d28d9;
+  background: rgba(124, 58, 237, 0.06);
 }
 
 .home-tab--active {
-  color: #1f8f6f;
-  border-bottom-color: #1f8f6f;
-  font-weight: 600;
+  color: #ffffff;
+  background: linear-gradient(120deg, #8b5cf6, #7c3aed);
+  box-shadow: 0 6px 16px rgba(124, 58, 237, 0.28);
 }
 
 .home-body {
-  padding: 20px 16px;
+  padding: 18px 18px 0;
+}
+
+/* 卡片容器 */
+.home-panel {
+  background: #ffffff;
+  border: 1px solid rgba(124, 58, 237, 0.1);
+  border-radius: 18px;
+  padding: 18px 18px 22px;
+  box-shadow: 0 8px 26px rgba(76, 29, 149, 0.06);
 }
 
 .home-panel h2 {
   margin: 0 0 8px;
-  font-size: 18px;
+  font-size: 19px;
+  color: #2b1e55;
 }
 
 .home-subtitle {
   margin: 20px 0 4px;
   font-size: 15px;
+  color: #43356e;
 }
 
 .home-hint {
-  color: #5a6b77;
+  color: #8a7bb0;
   font-size: 13px;
   line-height: 1.6;
   margin: 4px 0;
@@ -65,23 +195,35 @@ html.home-page #root {
 
 .home-btn {
   margin-top: 12px;
-  padding: 9px 18px;
+  padding: 9px 16px;
   font-size: 14px;
-  border: 1px solid #c6d2da;
-  border-radius: 6px;
+  border: 1px solid #e0d3ff;
+  border-radius: 10px;
   background: #ffffff;
-  color: #193242;
+  color: #4c3a78;
   cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.home-btn:hover {
+  background: #f8f4ff;
+  border-color: #c9b6ff;
 }
 
 .home-btn--primary {
-  background: #1f8f6f;
-  border-color: #1f8f6f;
+  background: linear-gradient(120deg, #8b5cf6, #7c3aed);
+  border-color: transparent;
   color: #ffffff;
+  box-shadow: 0 6px 16px rgba(124, 58, 237, 0.24);
+}
+
+.home-btn--primary:hover {
+  background: linear-gradient(120deg, #7c3aed, #6d28d9);
+  border-color: transparent;
 }
 
 .home-btn:disabled {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: default;
 }
 
@@ -97,21 +239,21 @@ html.home-page #root {
 .home-preview video {
   max-width: 200px;
   max-height: 260px;
-  border-radius: 8px;
-  background: #ffffff;
-  border: 1px solid #d8e0e7;
+  border-radius: 12px;
+  background: #faf7ff;
+  border: 1px solid #e9e0ff;
 }
 
 .home-progress {
   font-size: 13px;
-  color: #1f8f6f;
+  color: #7c3aed;
   margin: 0;
 }
 
 .home-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  gap: 14px;
   margin-top: 16px;
 }
 
@@ -122,15 +264,22 @@ html.home-page #root {
   align-items: center;
   gap: 6px;
   padding: 10px;
-  border: 1px solid #d8e0e7;
-  border-radius: 8px;
+  border: 1px solid #ece4fb;
+  border-radius: 14px;
   background: #ffffff;
   cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+
+.home-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(124, 58, 237, 0.12);
+  border-color: #d6c5ff;
 }
 
 .home-card--current {
-  border-color: #1f8f6f;
-  box-shadow: 0 0 0 2px rgba(31, 143, 111, 0.15);
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.16);
 }
 
 .home-card img,
@@ -138,13 +287,13 @@ html.home-page #root {
   width: 100%;
   aspect-ratio: 1 / 1;
   object-fit: contain;
-  border-radius: 6px;
-  background: #eef2f5;
+  border-radius: 10px;
+  background: #f7f2ff;
 }
 
 .home-card-name {
   font-size: 13px;
-  color: #193242;
+  color: #43356e;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -158,18 +307,39 @@ html.home-page #root {
   padding: 2px 8px;
   font-size: 11px;
   color: #ffffff;
-  background: #1f8f6f;
+  background: linear-gradient(120deg, #8b5cf6, #7c3aed);
   border-radius: 10px;
 }
 
 .home-card-delete {
   padding: 4px 10px;
   font-size: 12px;
-  color: #c0392b;
-  border: 1px solid #e6b8b3;
-  border-radius: 5px;
+  color: #e11d48;
+  border: 1px solid #ffd1dc;
+  border-radius: 8px;
   background: #ffffff;
   cursor: pointer;
+}
+
+.home-card-rename {
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #7c3aed;
+  border: 1px solid #ddd0ff;
+  border-radius: 8px;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.home-rename-input {
+  width: 100%;
+  max-width: 140px;
+  padding: 4px 6px;
+  font-size: 13px;
+  text-align: center;
+  border: 1px solid #8b5cf6;
+  border-radius: 8px;
+  color: #2b1e55;
 }
 
 .home-action-list {
@@ -185,21 +355,41 @@ html.home-page #root {
   justify-content: space-between;
   gap: 12px;
   padding: 12px 14px;
-  border: 1px solid #d8e0e7;
-  border-radius: 8px;
+  border: 1px solid #ece4fb;
+  border-radius: 14px;
   background: #ffffff;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.home-action-item:hover {
+  border-color: #d6c5ff;
+  box-shadow: 0 6px 18px rgba(124, 58, 237, 0.08);
+}
+
+.home-action-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: linear-gradient(120deg, rgba(139, 92, 246, 0.14), rgba(236, 72, 153, 0.12));
+  color: #7c3aed;
+  flex-shrink: 0;
 }
 
 .home-action-text {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1;
+  min-width: 0;
 }
 
 .home-action-label {
   font-size: 15px;
   font-weight: 600;
-  color: #193242;
+  color: #372a5c;
 }
 
 .home-action-item .home-btn {
@@ -221,9 +411,9 @@ html.home-page #root {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #d8e0e7;
-  border-radius: 8px;
-  background: #eef2f5;
+  border: 1px solid #e9e0ff;
+  border-radius: 12px;
+  background: #f7f2ff;
 }
 
 .home-scrub-preview img {
@@ -234,6 +424,7 @@ html.home-page #root {
 
 .home-scrub {
   width: 100%;
+  accent-color: #7c3aed;
 }
 
 .home-action-editor-controls {
@@ -252,26 +443,99 @@ html.home-page #root {
   min-width: 140px;
   padding: 8px 10px;
   font-size: 14px;
-  border: 1px solid #c6d2da;
-  border-radius: 6px;
-  color: #193242;
+  border: 1px solid #e0d3ff;
+  border-radius: 10px;
+  color: #372a5c;
+  background: #ffffff;
+}
+
+.home-input:focus {
+  outline: none;
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.14);
 }
 
 .home-check {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   font-size: 14px;
-  color: #193242;
+  color: #43356e;
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.home-check input {
+  accent-color: #7c3aed;
+  width: 15px;
+  height: 15px;
 }
 
 .home-action-preview {
   width: 56px;
   height: 56px;
   object-fit: contain;
-  border: 1px solid #d8e0e7;
-  border-radius: 6px;
-  background: #eef2f5;
+  border: 1px solid #e9e0ff;
+  border-radius: 10px;
+  background: #f7f2ff;
   flex-shrink: 0;
+}
+
+/* 静态姿势动作：一行展示缩略图 + 名字 + 装备 + 预览，配置项另起一行 */
+.home-pose-item {
+  flex-wrap: wrap;
+}
+
+.home-pose-config {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  order: 10;
+  flex: 1 1 100%;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #e4d9ff;
+}
+
+.home-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #8a7bb0;
+}
+
+.home-field .home-input {
+  flex: none;
+  min-width: 0;
+}
+
+.home-input--num {
+  flex: none;
+  min-width: 0;
+  width: 88px;
+}
+
+/* 导入页给新桌宠起名字 */
+.home-field--name {
+  width: 100%;
+  max-width: 280px;
+}
+
+.home-field--name .home-input {
+  width: 100%;
+}
+
+/* 动作列表里「内置」动作的角标 */
+.home-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 400;
+  color: #7c3aed;
+  border: 1px solid #ddd0ff;
+  border-radius: 9px;
+  vertical-align: middle;
+  background: #f7f2ff;
 }

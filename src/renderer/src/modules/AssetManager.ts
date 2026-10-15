@@ -131,3 +131,42 @@ export function loadPetSprite(imageUrl: string): Promise<PetSprite> {
     image.src = imageUrl
   })
 }
+
+// 判断图片是否自带透明通道（存在 alpha < 255 的像素）。
+// PNG 可能是透明底（比如 搞怪.png），JPEG 一定没有。姿势图自带透明时就不用再抠图。
+export function hasTransparency(imageUrl: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const image = new Image()
+
+    image.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = image.naturalWidth
+        canvas.height = image.naturalHeight
+        const context = canvas.getContext('2d')
+
+        if (!context) {
+          resolve(false)
+          return
+        }
+
+        context.drawImage(image, 0, 0)
+        const { data } = context.getImageData(0, 0, canvas.width, canvas.height)
+
+        for (let i = 3; i < data.length; i += 4) {
+          if (data[i] < 255) {
+            resolve(true)
+            return
+          }
+        }
+
+        resolve(false)
+      } catch {
+        resolve(false)
+      }
+    }
+
+    image.onerror = () => resolve(false)
+    image.src = imageUrl
+  })
+}

@@ -21,6 +21,31 @@ interface VideoActionDef {
   name: string
   dataUrl: string
   loop: boolean
+  // 是否「应用/启用」：未启用时不参与点击/自动大笑，只影响自动触发；缺省 = 启用。
+  enabled?: boolean
+}
+
+// 静态姿势动作的触发方式
+type StaticActionTrigger = 'manual' | 'click' | 'double' | 'dragStart' | 'dragEnd' | 'idleRandom'
+
+// 一个静态姿势动作的配置（持久化在 main 进程）
+interface StaticActionConfig {
+  trigger: StaticActionTrigger
+  equipped: boolean
+  durationMs: number
+  speed: number
+  cooldownMs: number
+}
+
+// 「自动捧腹大笑」规则：每完成 N 次动作自动播一次
+interface AutoLaughConfig {
+  enabled: boolean
+  everyNActions: number
+}
+
+// 内置动作视频（捧腹大笑）的「应用」开关，按内置动作 id 存；缺省 = 启用
+interface BuiltinVideoActionConfig {
+  enabled: Record<string, boolean>
 }
 
 // 动图数据：导入时已在渲染进程解码成帧、裁到包围盒，运行时直接播放。
@@ -99,9 +124,23 @@ interface DesktopPetApi {
   getCurrentPet: () => Promise<PetDescriptor | null>
   getDefaultCutout: () => Promise<string | null>
   saveDefaultCutout: (dataUrl: string) => void
+  getCutout: (key: string) => Promise<string | null>
+  saveCutout: (key: string, dataUrl: string) => void
+  getStaticActionConfigs: () => Promise<Record<string, StaticActionConfig>>
+  saveStaticActionConfigs: (configs: Record<string, StaticActionConfig>) => void
+  onStaticActionConfigsChanged: (
+    callback: (configs: Record<string, StaticActionConfig>) => void,
+  ) => () => void
+  getAutoLaughConfig: () => Promise<AutoLaughConfig>
+  saveAutoLaughConfig: (config: AutoLaughConfig) => void
+  onAutoLaughConfigChanged: (callback: (config: AutoLaughConfig) => void) => () => void
+  getBuiltinVideoActionConfig: () => Promise<BuiltinVideoActionConfig>
+  saveBuiltinVideoActionConfig: (config: BuiltinVideoActionConfig) => void
+  onBuiltinVideoActionConfigChanged: (callback: (config: BuiltinVideoActionConfig) => void) => () => void
   getLibrary: () => Promise<PetLibrary>
   selectImage: (id: string | null) => void
   deleteImage: (id: string) => void
+  renameImage: (id: string, name: string) => void
   triggerAction: (action: string) => void
   logError: (message: string) => void
   onTriggerAction: (callback: (action: string) => void) => () => void

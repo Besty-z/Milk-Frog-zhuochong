@@ -1001,3 +1001,427 @@ Step 3（点击穿透）和 Step 4（点击 vs 拖动）其实是同一件事：
 - 待用户 `npm run dev` 重启实测：点桌宠看奶蛙大笑，轮廓边缘应平滑、无白毛边。
 - 若还有极细白边，微调 WD_MAX / SAT_MAX 收紧；若角色边缘被吃，放宽这两个值。
 - 更复杂的背景视频仍建议走 @imgly 逐帧抠像（本机 WebM alpha 不可用，已踩过坑）。
+
+---
+
+## 2026-10-15 — 静态桌宠加「果冻肚」晃动
+
+### 背景
+用户要静态 PNG 桌宠的肚子能「果冻晃动」：点击肚子弹几下、拖动时肚子滞后晃动（越快越晃）、
+松手后自然衰减。要求局部形变（只有肚子动，头/身体不动），不能只移动整图冒充；轻量，不上物理引擎。
+
+### 方案
+角色只有一张静态 PNG、没有肚子分割信息，所以用「弹簧-阻尼 + 画布逐行形变」：
+- 弹簧-阻尼模拟肚子中心位移（标量 o + 速度 v），点击给初速度、拖动喂垂直速度、松手补一下，自然衰减。
+- 渲染把位移当成行波：逐行采样原图、肚子区域每行按「位移 × 余弦包络」上下偏移取源行，
+  包络在肚子上下边缘平滑降 0 → 头、腿不动、无接缝。这是真正的局部形变，不是移动整图。
+- 肚子区域按可配置的比例参数（默认 top=0.3 / bottom=0.8，图片中下段），可调。
+
+### 改了哪些文件
+- 新增 `src/renderer/src/modules/BellyJelly.ts`：弹簧-阻尼类 `BellyJelly` + `drawBellyJelly`
+  逐行形变绘制 + `DEFAULT_CONFIG`（stiffness/damping/pokeVelocity/releaseVelocity/dragCoupling/maxAmplitude/maxVelocity）。
+- 新增 `src/renderer/src/modules/BellyJellyPet.tsx`：`BellyJellyPet`（forwardRef）用 <canvas> 替代
+  静态图原来的 <img>，rAF 每帧推进弹簧 + 重画；暴露 `poke / applyDragVelocity / endDrag`。
+- 改 `src/renderer/src/App.tsx`：静态图渲染从 `PetRenderer` 换成 `BellyJellyPet`；
+  点击 → 有「捧腹大笑」视频动作照旧播视频，否则 `poke()`（替代原来的 CSS 开心跳）；
+  拖动 → `onDragMove` 算垂直速度喂 `applyDragVelocity`，`onDragEnd` 调 `endDrag`；
+  首页动作页「开心」预览 → `poke()`。删掉对 `usePetAction`/`PetRenderer` 的引用（两个文件保留未删）。
+- 改 `src/renderer/src/styles.css`：加 `.pet-canvas`（100%×100%、pointer-events:none）。
+
+### 验证结果（实际跑过）
+- `npm run typecheck` ✅
+- `npm run build` ✅（渲染进程 57 个模块，新模块已进 bundle）
+- 待用户 `npm run dev` 实测：点静态奶蛙 → 肚子 Q 弹；拖动 → 肚子滞后、越快越晃；松手 → 晃几下衰减停止；
+  头/身体稳定、透明背景/点击穿透/拖动/上传不受影响。
+
+### 如何调整（重点）
+- 肚子位置/大小：`BellyJelly.ts` 的 `DEFAULT_CONFIG.region = { top: 0.3, bottom: 0.8 }`
+  （以图片高度为 1，0=顶部 1=底部；奶蛙肚子中下段，可按角色改）。
+- 弹得高低：`pokeVelocity`（点击初速度）、`releaseVelocity`（松手补的那下）。
+- 晃动快慢/停多久：`stiffness`（刚度，越大回弹越快）、`damping`（阻尼，越大越早停）。
+- 拖动跟手程度：`dragCoupling`（越大拖得越快晃得越猛）。
+- 上限：`maxAmplitude`（最大位移）、`maxVelocity`（速度上限）。
+
+### 待办
+- 若默认奶蛙肚子位置不准，只调 `DEFAULT_CONFIG.region` 即可，无需改代码逻辑。
+- 动图/视频桌宠暂不加果冻肚（分别走 GifPlayer / TransparentVideo），需要时再扩展。
+
+### 2026-10-15（续）— 按反馈调小幅度，避免改变角色身材比例
+- 用户反馈「晃动幅度太大、别动原模型比例 / 拉长模型」。把默认参数整体调小：
+  `pokeVelocity 1.6→0.4`、`releaseVelocity 0.5→0.1`、`dragCoupling 0.5→0.15`、
+  `maxAmplitude 0.22→0.06`、`maxVelocity 3.5→1.0`，`region` 从 [0.3,0.8] 收到 [0.35,0.75]。
+  现在点击位移约 3%、上限 6%，肚子只是轻微弹一下。
+- 说明：肚子移动而头/腿固定，连接的图必然在中间有一点局部压/拉（这就是「拉长」的来源），
+  只能压小、无法完全消除；再往下调 `maxAmplitude`/`pokeVelocity` 即可。
+
+---
+
+## 2026-10-15 — 桌宠「360° 高速连续旋转」动作
+
+### 背景
+用户要一个独立的「360° 高速连续旋转」动作：约 5 秒内转好几圈，快速、平滑、匀速，结束后平滑停回
+0°、不残留角度/缩放；触发方式和点击/拖动无关（单独入口），和果冻肚互不干扰；保留所有现有功能。
+
+### 方案
+- 角度曲线：前 85% 匀速、后 15% 三次缓出减速到 0，总角度 = 360° × 整数圈（默认 6 圈），
+  这样结束时正好落在 0°、无偏移，且速度在 85% 分界处连续（不顿挫）。
+- 缩放包络：开头快速 1 → fit、中间保持、末段随缓停回到 1。
+  `fit = min(w,h) / 对角线`，保证旋转过程中角色（最长边）不超出窗口被裁掉；结束 scale 回到 1，不残留缩放。
+- 用 CSS `transform: rotate() scale()`（GPU 合成）旋转，不开额外画布重绘；`SpinRotator` 只包一层 div，
+  不碰内部果冻肚/点击/拖动逻辑。
+
+### 改了哪些文件
+- 新增 `src/renderer/src/modules/Spin.ts`：`SpinController` + `DEFAULT_SPIN = { durationMs: 5000, turns: 6 }`；
+  `frameAt(now)` 返回 `{ angle, scale, done }`，`p>=1` 时 `done=true` 并返回 `{angle:0, scale:1}`。
+- 新增 `src/renderer/src/modules/SpinRotator.tsx`：`SpinRotator`（forwardRef）包住子元素，
+  `start()` 读自身 `clientWidth/Height` 启动控制器 + rAF 循环，逐帧写 `el.style.transform`，结束清空 transform。
+- 改 `src/renderer/src/App.tsx`：`renderBody()` 外包 `<SpinRotator ref={spinRef}>`；
+  `onTriggerAction` 开头 `if (actionId === 'spin') { spinRef.current?.start(); return }`。
+- 改 `src/renderer/src/HomeApp.tsx`：动作页加内置动作「360° 旋转」（静态/默认桌宠显示），
+  点「预览」→ `triggerAction('spin')`。
+- 改 `src/renderer/src/styles.css`：加 `.pet-rotator`（100%×100%、`transform-origin: center center`、pointer-events:none）。
+
+### 验证结果（实际跑过）
+- `npm run typecheck` ✅
+- `npm run build` ✅（index 725.75kB）
+- **计时逻辑用脚本实测通过**（把 Spin.ts 转译成 CJS 后跑 Node 断言，全部 PASS）：
+  - 时长：`frameAt(4999ms)` 未结束、`frameAt(5000ms)` 结束 → 正好 5 秒；
+  - 圈数：结束前角度 ≈ 2160°（= 360° × 6 圈），终点返回 `{angle:0, scale:1, done:true}`；
+  - 角度单调递增、无跳变（每 16ms 最大步进 7.68°）；
+  - 85% 分界处速度连续（0.4800 vs 0.4794 deg/ms）。
+- ⚠️ GUI 表现（转起来顺不顺、停得自然、有没有被窗口裁边）**未实际运行确认**，需用户 `npm run dev`
+  手动验证：首页「动作」页 → 点「360° 旋转」的「预览」。
+
+### 如何调整
+- 转多快/几圈/几秒：`Spin.ts` 的 `DEFAULT_SPIN.durationMs`（总时长）、`turns`（圈数，必须整数）。
+- 旋转时缩多小：`fit = min(w,h)/对角线` 是自动算的，一般不调；想让窗口不被裁得更保险可把 fit 再乘 0.95。
+
+### 待办
+- 待用户实测视觉效果；若觉得转得太快/太慢改 `durationMs`、圈数改 `turns`。
+- 目前 `spin` 只对静态/默认桌宠开放入口（GIF/视频桌宠动作页不显示），需要时再放开。
+
+---
+
+## 2026-10-15 — 默认奶蛙「静态姿势动作」（防御/害羞/凝视/搞怪/伤心）
+
+### 背景
+用户新增了 5 张静态姿势素材（项目根目录：防御.jpg / 害羞.jpg / 凝视.jpg / 搞怪.png / 伤心.jpg），
+都是「已经摆好姿势的单张图」，不存在连续动画帧。要求：按文件名识别动作、每张图一个独立动作、
+用位移/旋转/缩放做动画（不拼帧动画）、独立触发、保留透明背景/上传/点击/拖动/果冻肚/360°旋转。
+
+### 图片 → 动作 → 动画方式（以文件名为准）
+| 原文件 | 动作 | 叠加的位移动画 |
+|---|---|---|
+| 防御.jpg | 防御 | 快速左右横向 shake（像格挡震一下） |
+| 害羞.jpg | 害羞 | 轻柔左右摇摆（小角度 rotate） |
+| 凝视.jpg | 凝视 | 缓慢放大（scale 1→1.1，像凑近注视） |
+| 搞怪.png | 搞怪 | 快速左右扭动（rotate wiggle） |
+| 伤心.jpg | 伤心 | 轻微下沉 + 微倾（translateY + 小 rotate） |
+
+每个动作：触发 → 切到该姿势图 + 播对应 CSS 位移动画 → 约 2 秒后自动回待机。均为独立触发、
+互不绑定（`idle`/其它动作/点击开心/视频动作都会清掉当前姿势）。
+
+### 改了哪些文件
+- 新增 `src/renderer/src/modules/PoseActions.ts`：注册表 `STATIC_POSE_ACTIONS`（id/label/imageUrl/motion/durationMs）。
+- 复制图片进 `src/renderer/src/assets/poses/`（ASCII 名：defend/shy/gaze/funny/sad），交给 Vite 打包。
+- 改 `src/renderer/src/modules/AssetManager.ts`：加 `hasTransparency()`（图自带透明通道就跳过抠图）。
+- 改 `src/renderer/src/App.tsx`：
+  - 加 `pose` / `poseSpriteUrl` / `poseTimerRef`；`onTriggerAction` 识别 `pose-*` 动作（仅默认奶娃）；
+  - 姿势效果：读抠图缓存 → 没有就现抠（`cutoutImage`）并缓存 → `loadPetSprite` 裁包围盒 + 收紧窗口；
+    图自带透明则直接用原图；抠图失败退回原图（带背景但姿势照常显示）。
+  - `renderBody` 静态路径外包 `.pose-motion .pose-motion--<motion>` div，显示 `poseSpriteUrl ?? spriteUrl ?? imageUrl`；
+    待机包围盒效果在姿势激活期间跳过（`pose` 进依赖），姿势结束自动恢复。
+  - 计时在「姿势图真正显示出来后」才启动（首次抠图要几秒，不能提前算）。
+- 改 `src/renderer/src/HomeApp.tsx`：动作页加「静态姿势动作（默认奶蛙专属）」区（仅 `currentPet === null` 显示），
+  每项缩略图 + 名字 + 「预览到桌宠」。
+- 改 `src/renderer/src/styles.css`：加 `.pose-motion` + 5 套 `@keyframes`。
+- 改 `src/main/PetAssets.ts`：加姿势抠图缓存 `pet-pose-cutouts.json`（按动作 id 存，版本号 `POSE_CUTOUT_VERSION=1`）+ IPC `pet:get-cutout` / `pet:save-cutout`。
+- 改 `src/preload/index.ts` + `src/renderer/src/vite-env.d.ts`：加 `getCutout` / `saveCutout` 桥接。
+
+### 验证结果（实际跑过）
+- `npm run typecheck` ✅
+- `npm run build` ✅（5 张姿势图已进 bundle：out/renderer/assets/defend-*.jpg / shy-*.jpg / gaze-*.jpg / funny-*.png / sad-*.jpg）
+- ⚠️ GUI 未实际运行验证（本会话看不到 Electron 窗口 / 图片内容显示 Unsupported Image）。需用户 `npm run dev`
+  后手动确认：首页「动作」页（默认奶蛙时）→ 点某个姿势「预览到桌宠」→ 桌宠切姿势 + 微动 → 几秒后回待机；
+  姿势图背景是否透明（首次要联网抠，之后缓存）。
+
+### 已知限制（受静态素材限制，如实说明）
+- 姿势「是否真的像防御/害羞/凝视/搞怪/伤心」只能按文件名判断——本会话读不出图片内容，无法亲眼确认姿势；
+  若某张图姿势与名字不符，告诉我实际姿势，我改 `PoseActions.ts` 里的 `motion`（或换动作名）。
+- 每个动作只是「姿势图 + 位移动画」，不是逐帧动画；跳跃/旋转这类需要多帧或程序化形变的动作，
+  静态单图只能做到「位移/旋转/缩放模拟」，达不到真动画的连贯感。
+- 4 张 JPG 有背景、需联网抠图（首次），`搞怪.png` 若已是透明底会跳过抠图直接显示。
+
+### 如何调整
+- 动作持续多久：`PoseActions.ts` 里对应条目的 `durationMs`。
+- 动画强弱/节奏：`styles.css` 里对应 `@keyframes` 的位移/角度/缩放幅度。
+- 姿势图背景没抠干净/误抠：和默认图一样调 `@imgly` 模型，或换 `isnet_quint8`（更快）。
+
+---
+
+## 2026-10-15 — 静态姿势动作可装备 + 自定义触发 + 独立配置持久化 + 新建桌宠可命名
+
+### 背景
+在上一版「静态姿势动作」基础上，把动作从「固定 2 秒、手动预览」升级成可自由管理：
+1. 每个动作可**独立装备 / 卸载**（equipped）；
+2. 每个动作可**自定义触发方式**（manual 手动 / click 单击 / double 双击 / dragStart 开始拖动 /
+   dragEnd 停止拖动 / idleRandom 空闲随机）；
+3. 每个动作**独立配置**：展示时长 durationMs、播放速度 speed、冷却 cooldownMs；
+4. 配置**持久化**，重启不丢；
+5. **兼容已有功能**：果冻肚、约 5 秒 360° 旋转、透明背景、上传、点击、拖动都保留；
+6. 额外需求「**新建桌宠可命名**」：导入时能改桌宠名字。
+
+### 架构
+- 动作的「基础信息」（id/名字/图/动画类型）留在渲染层 `PoseActions.ts`；
+  「可配置项」（装备/触发/时长/速度/冷却）由 **main 进程持久化**，存
+  `userData/pet-static-action-configs.json`，按动作 id 键值存。
+- 两个窗口（首页 + 桌宠）都通过 `getStaticActionConfigs` 读一次 + `onStaticActionConfigsChanged`
+  订阅变更；首页改配置 → `saveStaticActionConfigs` 存盘 → 主进程 `sendToPet` 广播 → 桌宠窗口实时生效。
+- 渲染层把「基础信息 + 默认配置 + 已存配置」合并成完整 `StaticAction`（缺省用 `DEFAULT_ACTION_CONFIG`）。
+
+### 触发派发（桌宠窗口 App.tsx）
+- `fireStaticAction(action, ignoreCooldown?)`：冷却内不重复触发（`lastFiredRef` 记每个动作上次时间）；
+  每触发一次都 `setPose({...action})`（新对象，好让姿势 effect 重跑、重计时）。
+- `fireTriggered(trigger)`：只在**默认奶娃**（`currentPet === null`）时找「已装备 && 触发方式匹配」的第一个动作。
+- 事件接入：单击 → 先 `fireTriggered('click')`，没命中才退回原来的「捧腹大笑/果冻肚」；双击 → `fireTriggered('double')`；
+  开始/停止拖动 → `fireTriggered('dragStart'/'dragEnd')`；空闲随机 → 每 8 秒在没有姿势/视频/片段展示时摇一次
+  `fireTriggered('idleRandom')`。手动预览仍走 `triggerAction(id)`（忽略冷却）。
+- 播放速度：位移动画的 `animation-duration = MOTION_BASE_DURATION[motion] / speed`（inline style 覆盖）。
+
+### 双击判定（PetInteraction.ts）
+- 单击 vs 双击：单击先不立即上报，等 `DOUBLE_TAP_MS=320ms` 窗口期，期间又来一次就按双击 `onDoubleTap`，
+  否则窗口期结束再报 `onTap`；一旦拖动过就不再和上一次点击凑双击。
+
+### 改了哪些文件
+- 改 `src/renderer/src/modules/PoseActions.ts`：拆成「基础信息 + 配置」两层，导出 `MOTION_BASE_DURATION`、
+  `DEFAULT_ACTION_CONFIG`、`StaticAction`；移除旧的 `getPoseAction` 和条目内的 `durationMs`。
+- 改 `src/main/PetAssets.ts`：加 `StaticActionConfig` 本地类型 + `STATIC_ACTION_TRIGGERS` 校验 + 
+  `readStaticActionConfigs/saveStaticActionConfigs/cleanStaticActionConfigs`；新增 IPC
+  `pet:get-static-action-configs`、`pet:save-static-action-configs`（存盘后广播 `pet:static-action-configs-changed`）。
+- 改 `src/preload/index.ts` + `src/renderer/src/vite-env.d.ts`：加 `getStaticActionConfigs/saveStaticActionConfigs/
+  onStaticActionConfigsChanged` 桥接 + 全局 `StaticActionTrigger`/`StaticActionConfig` 类型。
+- 改 `src/renderer/src/modules/PetInteraction.ts`：加双击判定 + `onDoubleTap`。
+- 改 `src/renderer/src/App.tsx`：加 `staticConfigs` state + 订阅；`staticActions` 合并；`fireStaticAction/fireTriggered`；
+  `onTriggerAction` 改用 `staticActions.find`（手动预览忽略冷却）；点击/双击/拖动/空闲随机接入触发派发；
+  位移动画按 speed 缩放 `animation-duration`。
+- 改 `src/renderer/src/HomeApp.tsx`：静态姿势动作区升级成完整配置 UI（装备勾选、触发下拉、时长/速度/冷却数字输入、
+  预览按钮），改一项即 `saveStaticActionConfigs` 存盘；导入页加「桌宠名字」输入框，导入各路径
+  （原图/抠图/动图/视频）统一用 `petName.trim() || 原文件名`。
+- 改 `src/renderer/src/home.css`：加 `.home-pose-item/.home-pose-config/.home-field/.home-input--num/
+  .home-field--name` 样式。
+
+### 验证结果（实际跑过）
+- `npm run typecheck` ✅
+- `npm run build` ✅
+- ⚠️ GUI 未实际运行验证（本会话看不到 Electron 窗口）。需用户 `npm run dev` 后手动确认：
+  1. 首页「动作」页（默认奶娃）能对 5 个姿势各自装备/卸载、改触发/时长/速度/冷却，改动即时生效；
+  2. 按触发方式在桌宠上点/双击/拖动验证对应动作；单点无「单击」动作时仍退回捧腹大笑/果冻肚；
+  3. 重启后配置还在；360° 旋转、果冻肚、透明穿透、上传、拖动不受影响；
+  4. 导入页能改桌宠名字，导入后样式页显示新名字。
+
+### 本次新增 / 修改 / 复用
+- 新增：触发方式系统（manual/click/double/dragStart/dragEnd/idleRandom）、双击判定、
+  冷却机制、动作配置持久化（main 进程 JSON）、速度缩放、桌宠命名输入。
+- 修改：`PoseActions.ts`（拆基础+配置）、`App.tsx`（触发派发 + 合并配置）、`HomeApp.tsx`（配置 UI + 命名）、
+  `PetInteraction.ts`（双击）、`PetAssets.ts`/`preload`/`vite-env.d.ts`（配置 IPC + 类型）。
+- 复用：现有姿势抠图缓存（`pet:get-cutout`/`pet:save-cutout`）、`loadPetSprite` 包围盒、
+  `onTriggerAction` 动作中转、`sendToPet` 广播、`hasTransparency` 跳过透明图、CSS 位移动画 keyframes。
+
+### 尚未完成 / 待办
+- 触发方式目前是「单选」：同一事件（如单击）最多触发一个已装备动作，多个同触发动作只取第一个；如需
+  一次触发多个可再扩展成多选。
+- 空闲随机是固定 8 秒固定节奏（有多个 idleRandom 动作时取第一个），未做真正的随机间隔/加权。
+- 位移动画的时长用「基准时长/speed」线性缩放，速度和「几秒后自动回待机」的 durationMs 是两套独立参数，
+  若 speed 过小动画可能没播完就被切回待机（属预期，可按需协调）。
+- GUI 表现待用户实测后反馈调参（触发节奏、冷却手感、命名是否进图库/样式页显示）。
+
+---
+
+## 2026-10-15 — 捧腹大笑改为默认桌宠内置动作 + 桌宠重命名
+
+### 背景
+1. 用户要求「捧腹大笑视为默认桌宠的默认动作视频，不需要导入」——原来点桌宠播捧腹大笑，前提是用户
+   自己去动作页导入一段视频动作；现在要开箱即用：默认奶娃自带这段视频，点桌宠直接播。
+2. 用户要求「桌宠重命名也实现一下」——上一版只做了导入时命名，现在要对已导入的桌宠在样式页随时改名。
+
+### 关于内置视频（重要）
+- 项目根目录的 `fb849533d275fbd1d8204047255dcdff.mp4`（1080×1920 竖屏，10 秒，h264+aac 带声音）就是
+  捧腹大笑素材，本次把它复制成 `src/renderer/src/assets/laugh-video.mp4` 随应用打包。
+- 之前顾虑过「奶蛙大笑视频有版权、不自动打包」，现按用户要求改为内置。
+
+### 改动
+- 新增 `src/renderer/src/modules/DefaultPetActions.ts`：`BUILTIN_DEFAULT_VIDEO_ACTIONS`（内置「捧腹大笑」，
+  `id: 'builtin-laugh'`，dataUrl 存打包后的**资源 URL** 而非 dataURL）+ `isBuiltinVideoAction()`。
+- 改 `src/renderer/src/App.tsx`：`effectiveDefaultVideoActions = 内置 + 用户导入的默认动作`；
+  `triggerLaugh` 和 `onTriggerAction` 里默认奶娃的动作列表都换成它（导入桌宠仍用各自 videoActions）。
+- 改 `src/renderer/src/HomeApp.tsx`：默认奶娃的动作视频列表 = 内置 + 用户导入；内置项打「内置」角标、
+  不显示删除按钮；提示文案说明捧腹大笑已内置。
+- 改 `src/main/PetAssets.ts`：新增 `pet:rename-image`（按 id 改 library 里的 name + persistLibrary）。
+- 改 `src/preload/index.ts` + `vite-env.d.ts`：加 `renameImage(id, name)` 桥接。
+- 改 `src/renderer/src/HomeApp.tsx`（样式页）：每张导入卡片加「重命名」按钮，点开就地变输入框
+  （Enter/失焦提交、Esc 取消），提交走 `renameImage` + `refreshLibrary`。
+- 改 `src/renderer/src/home.css`：加 `.home-badge`（内置角标）、`.home-card-rename`、`.home-rename-input`。
+
+### 验证结果（实际跑过）
+- `npm run typecheck` ✅
+- `npm run build` ✅（`laugh-video-*.mp4` 1,941.67kB 已进 bundle）
+- ⚠️ GUI 未实际运行验证。需用户 `npm run dev` 后手动确认：
+  1. 不导入任何动作视频时，直接点默认奶娃 → 播自带捧腹大笑视频（带声、抠黑边白底）→ 播完回待机；
+  2. 动作页「动作视频」区能看到「捧腹大笑」带「内置」角标、无删除按钮；仍可再导入自己的默认动作；
+  3. 样式页对已导入桌宠点「重命名」→ 改名成功，重启后仍保留；
+  4. 切到导入的桌宠后，点它不再播默认奶娃的捧腹大笑（各自动作隔离不变）。
+
+### 待办
+- 内置视频的 `TransparentVideo` 抠像阈值（DARK_LUM=55 / WD_MAX=95 / SAT_MAX=70 / TARGET_LONGEST=260）
+  是针对旧素材调的；这段内置视频若背景结构不同（黑边白底比例变化），边缘抠不干净/误抠需重新调这几个常量。
+- 内置动作目前不可编辑（loop/时长/名称固定），需要的话再扩展成「可改但不可删」。
+- 根目录原文件 `fb849533d275fbd1d8204047255dcdff.mp4` 已复制进 assets，根目录原件可删（留着也行）。
+
+---
+
+## 2026-10-15 — 每 N 次动作自动播捧腹大笑（可配置触发规则）
+
+### 背景
+用户「每进行三次动作自动播放捧腹大笑也可设定触发规则」：上一个动作做完 N 次后，自动插播一次
+捧腹大笑；这个 N（以及开关）要能在首页配置。
+
+### 方案（关键设计）
+- 用一个动作计数器 `actionTick`（数字 state）：每触发一次「被计数的动作」就 `setActionTick(t => t + 1)`。
+- 一个 effect 监听 `actionTick`：`actionTick !== 0 && actionTick % everyNActions === 0` 时调 `playLaugh()`。
+- `playLaugh()` 本身**不再 +1**，避免「大笑触发大笑」的死循环。
+- 计数只算「真的动作」：静态姿势动作（`fireStaticAction`）、360° 旋转、动作视频片段、GIF 帧区间动作、
+  开心/弹肚子（点击退回路径）。`idle`（待机）不算。
+- 单击到底算 1 次：点一下要么命中 `fireStaticAction('click')`、要么走 `triggerLaugh`/`poke` 退回路径，
+  两条路径各 +1，绝不重复 +1。
+
+### 改了哪些文件
+- 改 `src/main/PetAssets.ts`：新增 `AutoLaughConfig { enabled, everyNActions }` 本地类型 + 校验
+  `isAutoLaughConfig` + `DEFAULT_AUTO_LAUGH_CONFIG = { enabled: true, everyNActions: 3 }` +
+  `readAutoLaughConfig/saveAutoLaughConfig`（存 `userData/pet-auto-laugh-config.json`）；新增 IPC
+  `pet:get-auto-laugh-config` / `pet:save-auto-laugh-config`（存盘后广播 `pet:auto-laugh-config-changed`）。
+- 改 `src/preload/index.ts` + `src/renderer/src/vite-env.d.ts`：加 `getAutoLaughConfig/saveAutoLaughConfig/
+  onAutoLaughConfigChanged` 桥接 + 全局 `AutoLaughConfig` 类型。
+- 改 `src/renderer/src/App.tsx`（桌宠窗口）：加 `autoLaughConfig` + `actionTick` state + 读/订阅 effect +
+  自动大笑 effect；在 `fireStaticAction`、`onTriggerAction` 的 spin / 视频片段 / GIF 动作 / happy 分支里
+  `setActionTick(+1)`；抽 `playLaugh`/`triggerLaugh`。
+- 改 `src/renderer/src/HomeApp.tsx`（首页）：加 `autoLaughConfig` state + 读/订阅 effect + `updateAutoLaughConfig`；
+  动作页新增「自动捧腹大笑」配置区（启用勾选 + 「每 N 次动作」数字输入，N 下限 1）。
+- 改 `src/renderer/src/home.css`：`.home-input--num` 加 `flex: none; min-width: 0`（数字输入不被 flex 拉宽）。
+
+### 验证结果（实际跑过）
+- `npm run typecheck` ✅
+- `npm run build` ✅
+- ⚠️ GUI 未实际运行验证。需用户 `npm run dev` 后手动确认：
+  1. 连续触发 3 次动作（如点桌宠 3 下、或首页预览几个动作），第 3 次时自动插播捧腹大笑（带声）；
+  2. 首页「动作」页把 N 改成 1/5，或关掉「启用」，桌宠行为随之变化（关掉后不再自动大笑）；
+  3. 重启后 N 和开关还在（持久化）。
+
+### 本次新增 / 修改 / 复用
+- 新增：`AutoLaughConfig` 持久化 + IPC + 双窗口订阅、「每 N 次动作」计数与自动插播、首页配置 UI。
+- 修改：`PetAssets.ts`（配置读写 + IPC）、`preload/index.ts` + `vite-env.d.ts`（桥接 + 类型）、
+  `App.tsx`（actionTick 计数 + 自动大笑 effect）、`HomeApp.tsx`（配置 UI）、`home.css`（数字输入不拉宽）。
+- 复用：`playLaugh` 的取动作逻辑（内置捧腹大笑 → 导入桌宠各自视频动作 → 无则弹肚子）、
+  `sendToPet` 广播、`onTriggerAction` 动作中转。
+
+### 尚未完成 / 待办
+- 「每 N 次动作」是全局计数（不区分动作种类、跨桌宠不清零）。若要「每类动作各自计数」或「切换桌宠时
+  清零」，需要把 `actionTick` 按维度拆分，目前没这个需求。
+- 自动大笑用的是 `playLaugh()`（对导入桌宠若没视频动作则退化成弹肚子），和手动点击捧腹大笑同一条路径；
+  若想让导入桌宠的自动大笑有不同表现，需单独扩展。
+
+---
+
+## 2026-10-15 — 修「捧腹大笑重复出现」+ 动作视频加「应用」开关
+
+### 背景
+1. 用户反馈「捧腹大笑会有三个默认界面」——动作页里捧腹大笑出现得冗余/重复。
+2. 用户要求「这个视频动作加个应用功能，选择一个或多个使用」——动作视频要有「应用/启用」开关，勾选哪些就用哪些。
+
+### 排查出的重复根因（真 bug）
+- 首页 `handleDeleteVideoAction` 删动作时，把**整个 `currentVideoActions`（含内置捧腹大笑）** 当成
+  `updateVideoActions` 的入参发出去；主进程 `pet:update-video-action`（id 为 null 时）会把这份列表
+  **原样写进 `default-pet-video-actions.json`**。
+- 内置捧腹大笑的 `dataUrl` 是打包资源 URL（非 dataURL），被写进持久化后，下次启动就成了「用户动作」，
+  和渲染层写死的内置动作重叠 → 列表里出现多个捧腹大笑。删几次就叠几次，和之前手动导入过的旧捧腹大笑一起，
+  就凑成了「三个」。
+
+### 改动
+- 修 `src/renderer/src/HomeApp.tsx` 的 `handleDeleteVideoAction` / 新增的 `handleToggleVideoAction`：
+  发 `updateVideoActions` 前先 `filter(!isBuiltinVideoAction)`，内置动作永远不进持久化。
+- 修 `src/main/PetAssets.ts` 的 `readDefaultVideoActions`：只保留 `dataUrl.startsWith('data:')` 的
+  用户导入动作，把可能已误写进 JSON 的内置动作（资源 URL）也过滤掉，自动修复旧脏数据。
+- 动作视频加「应用/启用」开关（`VideoActionDef.enabled?: boolean`，缺省启用）：
+  - `src/main/PetAssets.ts` + `preload` + `vite-env.d.ts`：`enabled` 字段 + `isVideoActionDef` 校验；
+    内置动作的 enabled 单独持久化到 `pet-builtin-video-action-config.json`（`{ enabled: Record<id,boolean> }`），
+    新增 IPC `pet:get/save-builtin-video-action-config` + 广播 `pet:builtin-video-action-config-changed`。
+  - `src/renderer/src/App.tsx`：`effectiveDefaultVideoActions` 给内置动作按配置合并 `enabled`；
+    `playLaugh()` 只从「已启用」的动作里挑（点击/自动大笑生效），没有就退回果冻肚。
+  - `src/renderer/src/HomeApp.tsx`：`currentVideoActions` 合并内置 enabled；动作列表每项加「应用」勾选框
+    （内置/导入都有），改即存盘；「预览到桌宠」仍对未启用动作可用（和静态姿势的「装备」一致，手动预览不受限）。
+- 顺带改动作视频区提示文案，说明「应用」的作用。
+
+### 验证结果（实际跑过）
+- `npm run typecheck` ✅
+- `npm run build` ✅
+- ⚠️ GUI 未实际运行验证。需用户 `npm run dev` 后手动确认：
+  1. 动作页「动作视频」里捧腹大笑只出现一次（内置那条），不再有重复；
+  2. 每个动作视频前有「应用」勾选框，可勾一个或多个；取消勾选后点桌宠 / 自动大笑不再播它，
+     但手动「预览到桌宠」仍能播；
+  3. 重启后勾选状态保留。
+
+### 本次新增 / 修改 / 复用
+- 新增：`VideoActionDef.enabled` 应用开关、内置动作 enabled 持久化（`pet-builtin-video-action-config.json`）
+  + 一套 IPC/广播、首页动作视频「应用」勾选 UI。
+- 修改：`HomeApp.tsx`（内置不入持久化 + 应用勾选）、`PetAssets.ts`（enabled 校验 + 读库过滤 data: + 内置开关 IPC）、
+  `App.tsx`（合并 enabled + playLaugh 过滤）、`preload`/`vite-env.d.ts`（桥接 + 类型）。
+- 复用：`sendToPet` 广播、双窗口「读一次 + 订阅」配置同步套路（同 static/auto-laugh 配置）、
+  `isBuiltinVideoAction` 判断。
+
+### 尚未完成 / 待办
+- 「应用」只影响点击/自动大笑的自动触发；手动预览仍对所有动作可用（与静态姿势「装备」行为一致）。
+  若希望未启用动作连预览按钮都禁掉，可再加。
+- 若用户曾手动导入过旧版捧腹大笑（dataURL 形式），那仍是合法用户动作、会继续显示，需在首页手动删除；
+  本次只清理了「内置动作被误写进 JSON」这一种重复。
+
+---
+
+## 2026-10-15 — 首页 UI 视觉优化（紫色渐变主题）
+
+### 背景
+用户给了首页效果图，要求优化首页 UI（不是重做）。效果图要点：柔和紫色渐变、圆角卡片、精致图标、
+角色展示区、动作库、快捷操作区。约束：保留现有结构和业务逻辑、复用组件、不删素材/动作/上传/拖动/配置/持久化；
+**首页可以有背景和卡片，桌宠窗口必须保持透明**；只显示真实数据；不引入大型 UI 库。
+
+### 方案（低风险，纯视觉 + 只增不改）
+- 只动 `home.css`（首页样式，本身已被 `html.home-page` 作用域隔离）和 `HomeApp.tsx` 的展示层；
+  **完全不碰 `styles.css`（桌宠窗口透明样式）和 `App.tsx`（桌宠窗口逻辑）**。
+- 紫色渐变背景只加在 `html.home-page body` 上，桌宠窗口不受影响。
+
+### 改了哪些文件
+- 新增 `src/renderer/src/modules/HomeIcons.tsx`：内联 SVG 线性图标（upload/zap/grid/eyeOff/eye/smile/rotate/pause），
+  无任何依赖，跟 `currentColor` 换色。
+- 重写 `src/renderer/src/home.css`：紫色渐变背景、圆角卡片、阴影、紫色主色按钮、hover 抬升、
+  标签页 pill 化 + 激活渐变、输入框 focus 紫色描边；**保留全部原有类名**，只改视觉。
+- 改 `src/renderer/src/HomeApp.tsx`（只加展示层，不动任何 handler/state/effect）：
+  - 顶部新增「角色展示区」hero：显示当前桌宠（默认奶娃 / 已导入桌宠）的缩略图 + 名字 + 状态，只读真实数据
+    （`currentPet` / `defaultThumb` / `library`），视频桌宠用 `<video>` 预览。
+  - 顶部新增「快捷操作区」：隐藏 / 显示 / 开心 / 旋转（分别映射已有的 `hide`/`show`/`triggerAction`）。
+  - 三个标签页 + 三个内置动作（待机/开心/旋转）加图标。
+
+### 验证结果
+- `npm run typecheck` ✅
+- `npm run build` ✅（渲染进程 68 个模块，HomeIcons 已进 bundle，index CSS 8.1→12.3kB）
+- `npm run dev` 的 vite 编译阶段通过（main/preload/renderer 都 build successfully），但 **Electron 窗口没能在本会话
+  启动**：本 shell 设了 `ELECTRON_RUN_AS_NODE=1`，electron 被当纯 Node 跑，`electron.app` 为 undefined → 启动即退。
+  这是环境限制，不是代码问题；用户需在正常终端 `npm run dev` 亲眼看效果。
+
+### 待办
+- 待用户 `npm run dev` 实测：紫色渐变/卡片/图标/hero 展示是否满意；确认桌宠窗口仍透明、交互只在人物范围。
+- 效果图里若还有想照搬的细节（具体配色深浅、图标风格、卡片间距），告诉我继续微调；本次因本会话读不出图片，
+  是按文字描述做的近似。
+
+### 风险说明（已规避）
+- 首页样式全部限定在 `.home-*` / `html.home-page`，不会串到透明桌宠窗口。
+- hero 的「快捷操作」只用已有的 `hide`/`show`/`triggerAction` IPC，未新增 IPC、未改 main 进程。
+- 未删任何素材/动作/配置/持久化逻辑；原有三个标签页功能原样保留。
+

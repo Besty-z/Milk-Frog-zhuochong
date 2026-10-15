@@ -29,9 +29,51 @@ const desktopPetApi = {
   getCurrentPet: () => ipcRenderer.invoke('pet:get-current-pet'),
   getDefaultCutout: () => ipcRenderer.invoke('pet:get-default-cutout'),
   saveDefaultCutout: (dataUrl: string) => ipcRenderer.send('pet:save-default-cutout', dataUrl),
+  getCutout: (key: string) => ipcRenderer.invoke('pet:get-cutout', key),
+  saveCutout: (key: string, dataUrl: string) => ipcRenderer.send('pet:save-cutout', key, dataUrl),
+  getStaticActionConfigs: () => ipcRenderer.invoke('pet:get-static-action-configs'),
+  saveStaticActionConfigs: (configs: Record<string, StaticActionConfig>) =>
+    ipcRenderer.send('pet:save-static-action-configs', configs),
+  onStaticActionConfigsChanged: (
+    callback: (configs: Record<string, StaticActionConfig>) => void,
+  ) => {
+    const listener = (_event: IpcRendererEvent, configs: Record<string, StaticActionConfig>) =>
+      callback(configs)
+
+    ipcRenderer.on('pet:static-action-configs-changed', listener)
+
+    return () => {
+      ipcRenderer.removeListener('pet:static-action-configs-changed', listener)
+    }
+  },
+  getAutoLaughConfig: () => ipcRenderer.invoke('pet:get-auto-laugh-config'),
+  saveAutoLaughConfig: (config: AutoLaughConfig) =>
+    ipcRenderer.send('pet:save-auto-laugh-config', config),
+  onAutoLaughConfigChanged: (callback: (config: AutoLaughConfig) => void) => {
+    const listener = (_event: IpcRendererEvent, config: AutoLaughConfig) => callback(config)
+
+    ipcRenderer.on('pet:auto-laugh-config-changed', listener)
+
+    return () => {
+      ipcRenderer.removeListener('pet:auto-laugh-config-changed', listener)
+    }
+  },
+  getBuiltinVideoActionConfig: () => ipcRenderer.invoke('pet:get-builtin-video-action-config'),
+  saveBuiltinVideoActionConfig: (config: BuiltinVideoActionConfig) =>
+    ipcRenderer.send('pet:save-builtin-video-action-config', config),
+  onBuiltinVideoActionConfigChanged: (callback: (config: BuiltinVideoActionConfig) => void) => {
+    const listener = (_event: IpcRendererEvent, config: BuiltinVideoActionConfig) => callback(config)
+
+    ipcRenderer.on('pet:builtin-video-action-config-changed', listener)
+
+    return () => {
+      ipcRenderer.removeListener('pet:builtin-video-action-config-changed', listener)
+    }
+  },
   getLibrary: () => ipcRenderer.invoke('pet:get-library'),
   selectImage: (id: string | null) => ipcRenderer.send('pet:select-image', id),
   deleteImage: (id: string) => ipcRenderer.send('pet:delete-image', id),
+  renameImage: (id: string, name: string) => ipcRenderer.send('pet:rename-image', { id, name }),
   triggerAction: (action: string) => ipcRenderer.send('pet:trigger-action', action),
   logError: (message: string) => ipcRenderer.send('pet:log-error', message),
   onTriggerAction: (callback: (action: string) => void) => {

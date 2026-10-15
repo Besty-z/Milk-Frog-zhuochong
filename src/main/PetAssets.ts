@@ -25,6 +25,7 @@ interface VideoActionDef {
   name: string
   dataUrl: string
   loop: boolean
+  enabled?: boolean // 是否「应用/启用」；缺省视为启用
 }
 
 interface PetImage {
@@ -94,6 +95,211 @@ function saveDefaultCutout(dataUrl: string) {
   writeFileSync(defaultCutoutFile(), JSON.stringify({ version: DEFAULT_CUTOUT_VERSION, dataUrl }), 'utf8')
 }
 
+// 静态姿势动作（防御/害羞/凝视/搞怪/伤心）的抠图缓存：按动作 id 存，和默认图缓存一个套路。
+// 换姿势图时把 POSE_CUTOUT_VERSION +1，旧缓存自动失效、重新抠。
+const POSE_CUTOUT_VERSION = 1
+
+function poseCutoutsFile(): string {
+  return join(app.getPath('userData'), 'pet-pose-cutouts.json')
+}
+
+function readPoseCutouts(): Record<string, string> {
+  const file = poseCutoutsFile()
+
+  if (!existsSync(file)) {
+    return {}
+  }
+
+  try {
+    const data = JSON.parse(readFileSync(file, 'utf8')) as { version?: unknown; cutouts?: unknown }
+    if (data.version !== POSE_CUTOUT_VERSION || !data.cutouts || typeof data.cutouts !== 'object') {
+      return {}
+    }
+
+    const out: Record<string, string> = {}
+    for (const [key, value] of Object.entries(data.cutouts as Record<string, unknown>)) {
+      if (typeof value === 'string') {
+        out[key] = value
+      }
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+function savePoseCutout(key: string, dataUrl: string) {
+  const cutouts = readPoseCutouts()
+  cutouts[key] = dataUrl
+  mkdirSync(app.getPath('userData'), { recursive: true })
+  writeFileSync(poseCutoutsFile(), JSON.stringify({ version: POSE_CUTOUT_VERSION, cutouts }), 'utf8')
+}
+
+// 静态姿势动作的配置（触发方式/装备/时长/速度/冷却），按动作 id 存，重启后仍有效。
+interface StaticActionConfig {
+  trigger: 'manual' | 'click' | 'double' | 'dragStart' | 'dragEnd' | 'idleRandom'
+  equipped: boolean
+  durationMs: number
+  speed: number
+  cooldownMs: number
+}
+
+const STATIC_ACTION_TRIGGERS = new Set(['manual', 'click', 'double', 'dragStart', 'dragEnd', 'idleRandom'])
+
+function isStaticActionConfig(value: unknown): value is StaticActionConfig {
+  const c = value as StaticActionConfig
+  return (
+    !!value &&
+    typeof c.trigger === 'string' &&
+    STATIC_ACTION_TRIGGERS.has(c.trigger) &&
+    typeof c.equipped === 'boolean' &&
+    typeof c.durationMs === 'number' &&
+    typeof c.speed === 'number' &&
+    typeof c.cooldownMs === 'number'
+  )
+}
+
+function staticActionConfigsFile(): string {
+  return join(app.getPath('userData'), 'pet-static-action-configs.json')
+}
+
+function readStaticActionConfigs(): Record<string, StaticActionConfig> {
+  const file = staticActionConfigsFile()
+
+  if (!existsSync(file)) {
+    return {}
+  }
+
+  try {
+    const data = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
+    const out: Record<string, StaticActionConfig> = {}
+    for (const [key, value] of Object.entries(data)) {
+      if (isStaticActionConfig(value)) {
+        out[key] = value
+      }
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+function saveStaticActionConfigs(configs: Record<string, StaticActionConfig>) {
+  mkdirSync(app.getPath('userData'), { recursive: true })
+  writeFileSync(staticActionConfigsFile(), JSON.stringify(configs), 'utf8')
+}
+
+// 清洗渲染层传来的配置：只保留合法条目。
+function cleanStaticActionConfigs(raw: unknown): Record<string, StaticActionConfig> {
+  if (!raw || typeof raw !== 'object') {
+    return {}
+  }
+
+  const out: Record<string, StaticActionConfig> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (isStaticActionConfig(value)) {
+      out[key] = value
+    }
+  }
+  return out
+}
+
+// 「自动捧腹大笑」规则：每完成 N 次动作，自动播一次捧腹大笑（可开关、可调 N）。
+interface AutoLaughConfig {
+  enabled: boolean
+  everyNActions: number
+}
+
+function autoLaughConfigFile(): string {
+  return join(app.getPath('userData'), 'pet-auto-laugh-config.json')
+}
+
+function isAutoLaughConfig(value: unknown): value is AutoLaughConfig {
+  const c = value as AutoLaughConfig
+  return (
+    !!value &&
+    typeof c.enabled === 'boolean' &&
+    typeof c.everyNActions === 'number' &&
+    Number.isFinite(c.everyNActions) &&
+    c.everyNActions >= 1
+  )
+}
+
+const DEFAULT_AUTO_LAUGH_CONFIG: AutoLaughConfig = { enabled: true, everyNActions: 3 }
+
+function readAutoLaughConfig(): AutoLaughConfig {
+  const file = autoLaughConfigFile()
+
+  if (!existsSync(file)) {
+    return { ...DEFAULT_AUTO_LAUGH_CONFIG }
+  }
+
+  try {
+    const data = JSON.parse(readFileSync(file, 'utf8')) as unknown
+    return isAutoLaughConfig(data) ? data : { ...DEFAULT_AUTO_LAUGH_CONFIG }
+  } catch {
+    return { ...DEFAULT_AUTO_LAUGH_CONFIG }
+  }
+}
+
+function saveAutoLaughConfig(config: AutoLaughConfig) {
+  mkdirSync(app.getPath('userData'), { recursive: true })
+  writeFileSync(autoLaughConfigFile(), JSON.stringify(config), 'utf8')
+}
+
+// 内置动作视频（捧腹大笑）的「应用」开关：按内置动作 id 存，缺省 = 启用。
+// 内置动作的 dataUrl 是打包资源 URL（只有渲染层知道），所以它的 enabled 单独存这一份。
+interface BuiltinVideoActionConfig {
+  enabled: Record<string, boolean>
+}
+
+function builtinVideoActionConfigFile(): string {
+  return join(app.getPath('userData'), 'pet-builtin-video-action-config.json')
+}
+
+function readBuiltinVideoActionConfig(): BuiltinVideoActionConfig {
+  const file = builtinVideoActionConfigFile()
+
+  if (!existsSync(file)) {
+    return { enabled: {} }
+  }
+
+  try {
+    const data = JSON.parse(readFileSync(file, 'utf8')) as { enabled?: unknown }
+    const enabled: Record<string, boolean> = {}
+    if (data.enabled && typeof data.enabled === 'object') {
+      for (const [key, value] of Object.entries(data.enabled as Record<string, unknown>)) {
+        if (typeof value === 'boolean') {
+          enabled[key] = value
+        }
+      }
+    }
+    return { enabled }
+  } catch {
+    return { enabled: {} }
+  }
+}
+
+function cleanBuiltinVideoActionConfig(raw: unknown): BuiltinVideoActionConfig {
+  const enabled: Record<string, boolean> = {}
+  if (raw && typeof raw === 'object') {
+    const source = (raw as { enabled?: unknown }).enabled
+    if (source && typeof source === 'object') {
+      for (const [key, value] of Object.entries(source as Record<string, unknown>)) {
+        if (typeof key === 'string' && typeof value === 'boolean') {
+          enabled[key] = value
+        }
+      }
+    }
+  }
+  return { enabled }
+}
+
+function saveBuiltinVideoActionConfig(config: BuiltinVideoActionConfig) {
+  mkdirSync(app.getPath('userData'), { recursive: true })
+  writeFileSync(builtinVideoActionConfigFile(), JSON.stringify(config), 'utf8')
+}
+
 // 默认奶娃（不在图库里）自己的动作视频列表，单独存一份，和抠图缓存一个套路。
 function defaultVideoActionsFile(): string {
   return join(app.getPath('userData'), 'default-pet-video-actions.json')
@@ -108,7 +314,11 @@ function readDefaultVideoActions(): VideoActionDef[] {
 
   try {
     const data = JSON.parse(readFileSync(file, 'utf8')) as { actions?: unknown }
-    return Array.isArray(data.actions) ? data.actions.filter(isVideoActionDef) : []
+    // 只保留真正「用户导入」的动作（dataUrl 是 data: 开头）。内置动作的 dataUrl 是打包资源 URL，
+    // 一旦被误写进来就过滤掉，避免和渲染层里的内置动作重复。
+    return Array.isArray(data.actions)
+      ? data.actions.filter((a): a is VideoActionDef => isVideoActionDef(a) && a.dataUrl.startsWith('data:'))
+      : []
   } catch {
     return []
   }
@@ -181,7 +391,8 @@ function isVideoActionDef(a: unknown): a is VideoActionDef {
     typeof d.id === 'string' &&
     typeof d.name === 'string' &&
     typeof d.dataUrl === 'string' &&
-    typeof d.loop === 'boolean'
+    typeof d.loop === 'boolean' &&
+    (d.enabled === undefined || typeof d.enabled === 'boolean')
   )
 }
 
@@ -589,6 +800,42 @@ function registerIpc() {
     }
   })
 
+  ipcMain.handle('pet:get-cutout', (_event, key: unknown) => {
+    return typeof key === 'string' ? (readPoseCutouts()[key] ?? null) : null
+  })
+
+  ipcMain.on('pet:save-cutout', (_event, key: unknown, dataUrl: unknown) => {
+    if (typeof key === 'string' && key && typeof dataUrl === 'string' && dataUrl) {
+      savePoseCutout(key, dataUrl)
+    }
+  })
+
+  ipcMain.handle('pet:get-static-action-configs', () => readStaticActionConfigs())
+
+  ipcMain.on('pet:save-static-action-configs', (_event, configs: unknown) => {
+    const cleaned = cleanStaticActionConfigs(configs)
+    saveStaticActionConfigs(cleaned)
+    sendToPet('pet:static-action-configs-changed', cleaned)
+  })
+
+  ipcMain.handle('pet:get-auto-laugh-config', () => readAutoLaughConfig())
+
+  ipcMain.on('pet:save-auto-laugh-config', (_event, config: unknown) => {
+    if (!isAutoLaughConfig(config)) {
+      return
+    }
+    saveAutoLaughConfig(config)
+    sendToPet('pet:auto-laugh-config-changed', config)
+  })
+
+  ipcMain.handle('pet:get-builtin-video-action-config', () => readBuiltinVideoActionConfig())
+
+  ipcMain.on('pet:save-builtin-video-action-config', (_event, config: unknown) => {
+    const cleaned = cleanBuiltinVideoActionConfig(config)
+    saveBuiltinVideoActionConfig(cleaned)
+    sendToPet('pet:builtin-video-action-config-changed', cleaned)
+  })
+
   ipcMain.handle('pet:get-library', () => library)
 
   ipcMain.on('pet:select-image', (_event, id: unknown) => {
@@ -624,6 +871,28 @@ function registerIpc() {
 
     persistLibrary()
     broadcastCurrent()
+  })
+
+  ipcMain.on('pet:rename-image', (_event, arg: unknown) => {
+    const { id, name } = (arg ?? {}) as { id?: unknown; name?: unknown }
+
+    if (typeof id !== 'string' || typeof name !== 'string') {
+      return
+    }
+
+    const trimmed = name.trim()
+    if (!trimmed) {
+      return
+    }
+
+    const img = library.images.find((i) => i.id === id)
+
+    if (!img) {
+      return
+    }
+
+    img.name = trimmed
+    persistLibrary()
   })
 }
 

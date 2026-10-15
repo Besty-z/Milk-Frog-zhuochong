@@ -9,6 +9,9 @@ import {
   type GifFrames,
 } from './modules/GifDecoder'
 import { GifPlayer } from './modules/GifPlayer'
+import { DEFAULT_ACTION_CONFIG, STATIC_POSE_ACTIONS, type StaticAction } from './modules/PoseActions'
+import { BUILTIN_DEFAULT_VIDEO_ACTIONS, isBuiltinVideoAction } from './modules/DefaultPetActions'
+import { Icon, type IconName } from './modules/HomeIcons'
 import laughSound from './assets/laugh.mp3'
 import './home.css'
 
@@ -17,15 +20,25 @@ import './home.css'
 
 type Tab = 'import' | 'action' | 'style'
 
-const TABS: { key: Tab; label: string }[] = [
-  { key: 'import', label: '导入' },
-  { key: 'action', label: '动作' },
-  { key: 'style', label: '桌宠样式' },
+const TABS: { key: Tab; label: string; icon: IconName }[] = [
+  { key: 'import', label: '导入', icon: 'upload' },
+  { key: 'action', label: '动作', icon: 'zap' },
+  { key: 'style', label: '桌宠样式', icon: 'grid' },
 ]
 
-const BUILTIN_ACTIONS: { key: string; label: string; desc: string }[] = [
-  { key: 'idle', label: '待机', desc: '停止当前动作，回到待机状态' },
-  { key: 'happy', label: '开心', desc: '开心地跳两下' },
+const BUILTIN_ACTIONS: { key: string; label: string; desc: string; icon: IconName }[] = [
+  { key: 'idle', label: '待机', desc: '停止当前动作，回到待机状态', icon: 'pause' },
+  { key: 'happy', label: '开心', desc: '开心地跳两下', icon: 'smile' },
+  { key: 'spin', label: '360° 旋转', desc: '高速连续旋转约 5 秒后停回原位', icon: 'rotate' },
+]
+
+const STATIC_TRIGGER_OPTIONS: { value: StaticActionTrigger; label: string }[] = [
+  { value: 'manual', label: '手动触发' },
+  { value: 'click', label: '单击' },
+  { value: 'double', label: '双击' },
+  { value: 'dragStart', label: '开始拖动' },
+  { value: 'dragEnd', label: '停止拖动' },
+  { value: 'idleRandom', label: '空闲随机' },
 ]
 
 function isGifDataUrl(dataUrl: string): boolean {
@@ -71,6 +84,8 @@ function videoSize(dataUrl: string): Promise<{ width: number; height: number }> 
 function HomeApp() {
   const [tab, setTab] = useState<Tab>('import')
   const [picked, setPicked] = useState<{ dataUrl: string; name: string } | null>(null)
+  // 导入时给新桌宠起的名字（默认用文件名，可改）
+  const [petName, setPetName] = useState('')
   const [busy, setBusy] = useState(false)
   const [cutting, setCutting] = useState(false)
   const [cutoutMsg, setCutoutMsg] = useState<string | null>(null)
@@ -78,6 +93,9 @@ function HomeApp() {
   // 动作编辑器里「待添加」的声音（选好后跟着下一个动作一起存）
   const [pendingSound, setPendingSound] = useState<{ dataUrl: string; name: string } | null>(null)
   const [library, setLibrary] = useState<PetLibrary>({ images: [], currentId: null })
+  // 样式页「重命名」：正在重命名的条目 id + 输入框里的新名字
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
   // 默认桌宠的缩略图：有抠图缓存就用透明版，否则显示原图
   const [defaultThumb, setDefaultThumb] = useState<string>(getDefaultPetImage)
 
@@ -98,6 +116,14 @@ function HomeApp() {
   const [pickedVideoAction, setPickedVideoAction] = useState<{ dataUrl: string; name: string } | null>(null)
   const [videoActionName, setVideoActionName] = useState('')
   const [videoActionLoop, setVideoActionLoop] = useState(true)
+  // 静态动作配置：从 main 进程读，变更时跟随（装备/触发/时长/速度/冷却）
+  const [staticConfigs, setStaticConfigs] = useState<Record<string, StaticActionConfig>>({})
+  // 自动捧腹大笑规则：每 N 次动作自动播一次
+  const [autoLaughConfig, setAutoLaughConfig] = useState<AutoLaughConfig>({ enabled: true, everyNActions: 3 })
+  // 内置动作视频（捧腹大笑）的「应用」开关：按 id 存，缺省 = 启用
+  const [builtinVideoActionConfig, setBuiltinVideoActionConfig] = useState<BuiltinVideoActionConfig>({
+    enabled: {},
+  })
 
   const refreshLibrary = useCallback(() => {
     void window.desktopPet.getLibrary().then(setLibrary)
@@ -121,6 +147,24 @@ function HomeApp() {
     return window.desktopPet.onDefaultVideoActionsChanged(setDefaultVideoActions)
   }, [])
 
+  // 静态动作配置：启动读一次 + 变更时跟随（两个窗口都订阅，改动实时同步）
+  useEffect(() => {
+    void window.desktopPet.getStaticActionConfigs().then(setStaticConfigs)
+    return window.desktopPet.onStaticActionConfigsChanged(setStaticConfigs)
+  }, [])
+
+  // 自动捧腹大笑规则：启动读一次 + 变更时跟随
+  useEffect(() => {
+    void window.desktopPet.getAutoLaughConfig().then(setAutoLaughConfig)
+    return window.desktopPet.onAutoLaughConfigChanged(setAutoLaughConfig)
+  }, [])
+
+  // 内置动作视频「应用」开关：启动读一次 + 变更时跟随
+  useEffect(() => {
+    void window.desktopPet.getBuiltinVideoActionConfig().then(setBuiltinVideoActionConfig)
+    return window.desktopPet.onBuiltinVideoActionConfigChanged(setBuiltinVideoActionConfig)
+  }, [])
+
   // 当前桌宠：选择变化时重新拉一次
   useEffect(() => {
     void window.desktopPet.getCurrentPet().then(setCurrentPet)
@@ -138,8 +182,43 @@ function HomeApp() {
     [currentPet?.id],
   )
 
-  // 当前桌宠的动作视频列表：默认奶娃用 defaultVideoActions，导入的桌宠用条目里的 videoActions
-  const currentVideoActions = currentPet ? (currentPet.videoActions ?? []) : defaultVideoActions
+  // 当前桌宠的动作视频列表：默认奶娃用「自带捧腹大笑 + 用户导入的默认动作」，导入的桌宠用条目里的 videoActions
+  // 内置动作的「应用」开关从 builtinVideoActionConfig 读（缺省启用）。
+  const currentVideoActions = currentPet
+    ? (currentPet.videoActions ?? [])
+    : [
+        ...BUILTIN_DEFAULT_VIDEO_ACTIONS.map((a) => ({
+          ...a,
+          enabled: builtinVideoActionConfig.enabled[a.id] ?? true,
+        })),
+        ...defaultVideoActions,
+      ]
+
+  // 静态动作：基础信息 + 用户配置合并
+  const staticActions = useMemo<StaticAction[]>(
+    () =>
+      STATIC_POSE_ACTIONS.map((base) => ({
+        ...base,
+        ...DEFAULT_ACTION_CONFIG,
+        ...(staticConfigs[base.id] ?? {}),
+      })),
+    [staticConfigs],
+  )
+
+  const updateStaticConfig = (id: string, patch: Partial<StaticActionConfig>) => {
+    const next = {
+      ...staticConfigs,
+      [id]: { ...(staticConfigs[id] ?? DEFAULT_ACTION_CONFIG), ...patch },
+    }
+    setStaticConfigs(next)
+    window.desktopPet.saveStaticActionConfigs(next)
+  }
+
+  const updateAutoLaughConfig = (patch: Partial<AutoLaughConfig>) => {
+    const next = { ...autoLaughConfig, ...patch }
+    setAutoLaughConfig(next)
+    window.desktopPet.saveAutoLaughConfig(next)
+  }
 
   // 导入页选中的动图，拼成预览用的帧数组
   const importGifFrames = useMemo(
@@ -167,6 +246,7 @@ function HomeApp() {
       const image = await window.desktopPet.chooseImage()
       if (image) {
         setPicked(image)
+        setPetName(image.name)
         setImportGif(null)
         setCutoutMsg(null)
 
@@ -190,7 +270,7 @@ function HomeApp() {
       return
     }
 
-    window.desktopPet.applyImage(picked)
+    window.desktopPet.applyImage({ dataUrl: picked.dataUrl, name: petName.trim() || picked.name })
     setPicked(null)
     setImportGif(null)
     refreshLibrary()
@@ -206,7 +286,7 @@ function HomeApp() {
       const cropped = await cropGifFrames(importGif.frames)
 
       window.desktopPet.applyGif({
-        name: picked.name,
+        name: petName.trim() || picked.name,
         frames: cropped.frames,
         delays: importGif.delays,
         width: cropped.width,
@@ -247,7 +327,7 @@ function HomeApp() {
       const cropped = await cropGifFrames(cutout)
 
       window.desktopPet.applyGif({
-        name: picked.name,
+        name: petName.trim() || picked.name,
         frames: cropped.frames,
         delays: importGif.delays,
         width: cropped.width,
@@ -281,7 +361,7 @@ function HomeApp() {
         setCutoutMsg(`正在下载 ${key}… ${percent}%`)
       })
 
-      window.desktopPet.applyImage({ dataUrl: cutoutUrl, name: picked.name })
+      window.desktopPet.applyImage({ dataUrl: cutoutUrl, name: petName.trim() || picked.name })
       setPicked(null)
       refreshLibrary()
     } catch (err) {
@@ -302,6 +382,23 @@ function HomeApp() {
   const handleDelete = (id: string) => {
     window.desktopPet.deleteImage(id)
     refreshLibrary()
+  }
+
+  const handleStartRename = (id: string, name: string) => {
+    setRenamingId(id)
+    setRenameValue(name)
+  }
+
+  const handleCommitRename = (id: string) => {
+    if (renamingId !== id) {
+      return
+    }
+    const name = renameValue.trim()
+    if (name) {
+      window.desktopPet.renameImage(id, name)
+      refreshLibrary()
+    }
+    setRenamingId(null)
   }
 
   const saveActions = (next: PetActionDef[]) => {
@@ -354,7 +451,7 @@ function HomeApp() {
     try {
       const { width, height } = await videoSize(picked.dataUrl)
 
-      window.desktopPet.applyVideo({ name: picked.name, dataUrl: picked.dataUrl, width, height })
+      window.desktopPet.applyVideo({ name: petName.trim() || picked.name, dataUrl: picked.dataUrl, width, height })
       setPicked(null)
       refreshLibrary()
     } catch (err) {
@@ -420,16 +517,88 @@ function HomeApp() {
   const handleDeleteVideoAction = (id: string) => {
     window.desktopPet.updateVideoActions({
       id: currentPet === null ? null : currentPet.id,
-      actions: currentVideoActions.filter((a) => a.id !== id),
+      // 只保存「用户导入」的动作，别把内置动作也写进持久化列表（否则会重复）
+      actions: currentVideoActions.filter((a) => a.id !== id && !isBuiltinVideoAction(a.id)),
     })
+    refreshVideoActions()
+  }
+
+  const handleToggleVideoAction = (id: string, enabled: boolean) => {
+    if (isBuiltinVideoAction(id)) {
+      const next = { enabled: { ...builtinVideoActionConfig.enabled, [id]: enabled } }
+      setBuiltinVideoActionConfig(next)
+      window.desktopPet.saveBuiltinVideoActionConfig(next)
+      return
+    }
+
+    const next = currentVideoActions
+      .filter((a) => !isBuiltinVideoAction(a.id))
+      .map((a) => (a.id === id ? { ...a, enabled } : a))
+    window.desktopPet.updateVideoActions({ id: currentPet === null ? null : currentPet.id, actions: next })
     refreshVideoActions()
   }
 
   const pickedIsGif = picked ? isGifDataUrl(picked.dataUrl) : false
   const pickedIsVideo = picked ? isVideoDataUrl(picked.dataUrl) : false
 
+  // 首页顶部「角色展示区」：展示当前桌宠（默认奶娃或已导入的桌宠），只读真实数据
+  const heroName =
+    currentPet === null
+      ? '默认桌宠'
+      : (library.images.find((i) => i.id === currentPet.id)?.name ?? '桌宠')
+  const heroImage =
+    currentPet === null
+      ? defaultThumb
+      : currentPet.kind === 'gif'
+        ? (currentPet.frames[0] ?? defaultThumb)
+        : currentPet.dataUrl
+  const heroIsVideo = currentPet?.kind === 'video'
+
   return (
     <div className="home">
+      <header className="home-hero">
+        <div className="home-hero-pet">
+          <div className="home-hero-avatar">
+            {heroIsVideo ? (
+              <video src={heroImage} muted autoPlay loop playsInline />
+            ) : (
+              <img src={heroImage} alt={heroName} />
+            )}
+          </div>
+          <div className="home-hero-meta">
+            <span className="home-hero-eyebrow">当前桌宠</span>
+            <span className="home-hero-name">{heroName}</span>
+            <span className="home-hero-status">{currentPet === null ? '默认奶娃' : '使用中'}</span>
+          </div>
+        </div>
+        <div className="home-hero-actions">
+          <button className="home-quick" title="隐藏桌宠" onClick={() => window.desktopPet.hide()}>
+            <Icon name="eyeOff" size={16} />
+            <span>隐藏</span>
+          </button>
+          <button className="home-quick" title="显示桌宠" onClick={() => window.desktopPet.show()}>
+            <Icon name="eye" size={16} />
+            <span>显示</span>
+          </button>
+          <button
+            className="home-quick"
+            title="开心地跳两下"
+            onClick={() => window.desktopPet.triggerAction('happy')}
+          >
+            <Icon name="smile" size={16} />
+            <span>开心</span>
+          </button>
+          <button
+            className="home-quick"
+            title="360° 旋转"
+            onClick={() => window.desktopPet.triggerAction('spin')}
+          >
+            <Icon name="rotate" size={16} />
+            <span>旋转</span>
+          </button>
+        </div>
+      </header>
+
       <nav className="home-tabs">
         {TABS.map((t) => (
           <button
@@ -437,6 +606,7 @@ function HomeApp() {
             className={`home-tab${tab === t.key ? ' home-tab--active' : ''}`}
             onClick={() => setTab(t.key)}
           >
+            <Icon name={t.icon} size={17} />
             {t.label}
           </button>
         ))}
@@ -462,6 +632,17 @@ function HomeApp() {
                   <img src={picked.dataUrl} alt={picked.name} />
                 )}
                 <p className="home-hint">{picked.name}</p>
+
+                <label className="home-field home-field--name">
+                  桌宠名字
+                  <input
+                    className="home-input"
+                    type="text"
+                    value={petName}
+                    onChange={(e) => setPetName(e.target.value)}
+                    placeholder="给这只桌宠起个名字"
+                  />
+                </label>
 
                 {pickedIsVideo ? (
                   <>
@@ -643,6 +824,9 @@ function HomeApp() {
                 <div className="home-action-list">
                   {BUILTIN_ACTIONS.map((a) => (
                     <div key={a.key} className="home-action-item">
+                      <span className="home-action-icon">
+                        <Icon name={a.icon} size={20} />
+                      </span>
                       <div className="home-action-text">
                         <span className="home-action-label">{a.label}</span>
                         <span className="home-hint">{a.desc}</span>
@@ -654,9 +838,124 @@ function HomeApp() {
                   ))}
                 </div>
 
+                <h3 className="home-subtitle">自动捧腹大笑</h3>
+                <p className="home-hint">
+                  每完成 N 次动作，自动播一次捧腹大笑。默认奶娃是内置大笑视频；导入的桌宠用各自的「捧腹大笑」动作，没有就弹肚子。
+                </p>
+                <div className="home-action-editor-controls">
+                  <label className="home-check">
+                    <input
+                      type="checkbox"
+                      checked={autoLaughConfig.enabled}
+                      onChange={(e) => updateAutoLaughConfig({ enabled: e.target.checked })}
+                    />
+                    启用
+                  </label>
+                  <span className="home-hint">每</span>
+                  <input
+                    className="home-input home-input--num"
+                    type="number"
+                    min={1}
+                    value={autoLaughConfig.everyNActions}
+                    onChange={(e) => {
+                      const n = Math.max(1, Math.round(Number(e.target.value) || 1))
+                      updateAutoLaughConfig({ everyNActions: n })
+                    }}
+                  />
+                  <span className="home-hint">次动作</span>
+                </div>
+
+                {currentPet === null && (
+                  <>
+                    <h3 className="home-subtitle">静态姿势动作（默认奶蛙专属）</h3>
+                    <p className="home-hint">
+                      每个姿势是一张独立静态图。可自由「装备 / 卸载」，并为每个动作单独设置触发方式、展示时长、播放速度和冷却；改动即时生效并自动保存。
+                    </p>
+                    <div className="home-action-list home-pose-list">
+                      {staticActions.map((a) => (
+                        <div key={a.id} className="home-action-item home-pose-item">
+                          <img src={a.imageUrl} alt={a.label} className="home-action-preview" />
+                          <div className="home-action-text">
+                            <span className="home-action-label">{a.label}</span>
+                            <label className="home-check">
+                              <input
+                                type="checkbox"
+                                checked={a.equipped}
+                                onChange={(e) => updateStaticConfig(a.id, { equipped: e.target.checked })}
+                              />
+                              装备
+                            </label>
+                          </div>
+                          <div className="home-pose-config">
+                            <label className="home-field">
+                              触发
+                              <select
+                                className="home-input"
+                                value={a.trigger}
+                                onChange={(e) =>
+                                  updateStaticConfig(a.id, {
+                                    trigger: e.target.value as StaticActionTrigger,
+                                  })
+                                }
+                              >
+                                {STATIC_TRIGGER_OPTIONS.map((o) => (
+                                  <option key={o.value} value={o.value}>
+                                    {o.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="home-field">
+                              时长(ms)
+                              <input
+                                className="home-input home-input--num"
+                                type="number"
+                                min={0}
+                                value={a.durationMs}
+                                onChange={(e) =>
+                                  updateStaticConfig(a.id, { durationMs: Number(e.target.value) })
+                                }
+                              />
+                            </label>
+                            <label className="home-field">
+                              速度
+                              <input
+                                className="home-input home-input--num"
+                                type="number"
+                                min={0.1}
+                                step={0.1}
+                                value={a.speed}
+                                onChange={(e) => updateStaticConfig(a.id, { speed: Number(e.target.value) })}
+                              />
+                            </label>
+                            <label className="home-field">
+                              冷却(ms)
+                              <input
+                                className="home-input home-input--num"
+                                type="number"
+                                min={0}
+                                value={a.cooldownMs}
+                                onChange={(e) =>
+                                  updateStaticConfig(a.id, { cooldownMs: Number(e.target.value) })
+                                }
+                              />
+                            </label>
+                          </div>
+                          <button
+                            className="home-btn"
+                            onClick={() => window.desktopPet.triggerAction(a.id)}
+                          >
+                            预览到桌宠
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+
                 <h3 className="home-subtitle">动作视频（触发才播）</h3>
                 <p className="home-hint">
-                  选一段短视频当一个动作，触发时桌宠播这段视频、播完回待机。动作按桌宠各自存：捧腹大笑这类是当前桌宠专属，换别的桌宠要用它自己的视频。
+                  选一段短视频当一个动作，触发时桌宠播这段视频、播完回待机。勾选「应用」的动作才会在点桌宠 / 自动大笑时被用到（可勾多个）；未勾选的只在手动「预览」时播。默认奶娃自带「捧腹大笑」（点桌宠就播，无需导入）。
                 </p>
 
                 <div className="home-action-editor-controls">
@@ -697,8 +996,17 @@ function HomeApp() {
                         <div className="home-action-text">
                           <span className="home-action-label">
                             {a.name}
+                            {isBuiltinVideoAction(a.id) && <span className="home-badge">内置</span>}
                             <span className="home-hint">（{a.loop ? '循环' : '播一次'}）</span>
                           </span>
+                          <label className="home-check">
+                            <input
+                              type="checkbox"
+                              checked={a.enabled !== false}
+                              onChange={(e) => handleToggleVideoAction(a.id, e.target.checked)}
+                            />
+                            应用
+                          </label>
                         </div>
                         <button
                           className="home-btn"
@@ -706,9 +1014,11 @@ function HomeApp() {
                         >
                           预览到桌宠
                         </button>
-                        <button className="home-btn" onClick={() => handleDeleteVideoAction(a.id)}>
-                          删除
-                        </button>
+                        {!isBuiltinVideoAction(a.id) && (
+                          <button className="home-btn" onClick={() => handleDeleteVideoAction(a.id)}>
+                            删除
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -749,10 +1059,37 @@ function HomeApp() {
                     ) : (
                       <img src={img.kind === 'gif' ? (img.frames[0] ?? defaultThumb) : img.dataUrl} alt={img.name} />
                     )}
-                    <span className="home-card-name">{img.name}</span>
+                    {renamingId === img.id ? (
+                      <input
+                        className="home-rename-input"
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleCommitRename(img.id)
+                          } else if (e.key === 'Escape') {
+                            setRenamingId(null)
+                          }
+                        }}
+                        onBlur={() => handleCommitRename(img.id)}
+                        autoFocus
+                      />
+                    ) : (
+                      <span className="home-card-name">{img.name}</span>
+                    )}
                     {img.kind === 'gif' && <span className="home-card-badge">动图</span>}
                     {img.kind === 'video' && <span className="home-card-badge">视频</span>}
                     {library.currentId === img.id && <span className="home-card-badge">使用中</span>}
+                    <button
+                      className="home-card-rename"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleStartRename(img.id, img.name)
+                      }}
+                    >
+                      重命名
+                    </button>
                     <button
                       className="home-card-delete"
                       onClick={(e) => {
