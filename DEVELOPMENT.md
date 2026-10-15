@@ -1425,3 +1425,52 @@ Step 3（点击穿透）和 Step 4（点击 vs 拖动）其实是同一件事：
 - hero 的「快捷操作」只用已有的 `hide`/`show`/`triggerAction` IPC，未新增 IPC、未改 main 进程。
 - 未删任何素材/动作/配置/持久化逻辑；原有三个标签页功能原样保留。
 
+## 2026-10-15 — 手机网页版 + 打包 exe（Windows 版原样保留）
+
+### 背景
+用户要两件事：① 做一个手机浏览器能打开的网页版；② 把现有项目打包成 exe。要求不重写、不迁移、
+Windows 版桌宠和全部功能保留。
+
+### 方案（最小改动，纯「加外壳」，零重写）
+- **网页版**：核心是给 `window.desktopPet` 写一个「浏览器版实现」，让 `App.tsx` / `HomeApp.tsx` 两个组件**原样复用、
+  一行不改**。桌面版里这个对象走 IPC（读写 JSON 文件 / 控制窗口 / 弹文件框 / 跨窗口通信），网页版替换成：
+  - 数据读写 → IndexedDB（结构/默认值/版本/清洗和 `PetAssets.ts` 完全一致）
+  - 窗口控制 → 交给 `WebApp` 注册的 `PetController` 操作浮动 DOM（`setSize`→改容器尺寸、`drag*`→在页面内拖动、`hide/show`→显隐）
+  - 选文件 → `<input type=file>`；跨窗口通信 → 页面内事件总线
+  - 桌面「透明置顶窗口」在浏览器里不存在，网页版是**页面内右下角浮动桌宠**（可拖动），首页和桌宠合成一个页面。
+- **打包**：主进程/预加载只 `require('electron')` 和 `node:` 内置模块、渲染层已被 electron-vite 完整打包，
+  → 运行时不需要 node_modules，所以把依赖全部移到 devDependencies、electron-builder 只打包 `out/**`。
+
+### 改了哪些文件
+- 新增 `src/renderer/src/web/bridge.ts`：IndexedDB KV + 事件总线 + PetController + 完整 DesktopPetApi 实现。
+- 新增 `src/renderer/src/web/WebApp.tsx`：`<HomeApp/>` + 浮动 `<App/>` 合成一页，注册 PetController。
+- 新增 `src/renderer/src/web/main.tsx`：网页入口，先 `initWebBridge()` 再渲染，给 html 打 `home-page`。
+- 新增 `src/renderer/src/web/web.css`：从 styles.css 摘出 `.pet-*`/`.pose-motion-*` + 浮动容器 + 手机微调。
+- 新增 `src/renderer/web.html`、`vite.web.config.ts`（纯 Vite，base './'，输出 dist-web）。
+- 新增 `electron-builder.yml`（files 只含 out/，asarUnpack bg-removal，nsis+portable 双目标）。
+- 新增 `.npmrc`：electron/electron-builder 走阿里云镜像（国内下 GitHub 会超时）。
+- 改 `package.json`：加 `build:web`/`preview:web`/`pack`/`dist` 脚本；deps 移进 devDependencies；加 electron-builder、vite。
+
+### 验证结果
+- `npm run typecheck` ✅
+- `npm run build`（electron-vite）✅ 68 模块，web.html 未被误打进桌面版
+- `npm run build:web` ✅ 71 模块，dist-web 124MB（含 85MB 抠图模型 + 12MB wasm）
+- `npm run dist`（打包）✅ 产出 `release/MilkFrogPet Setup 0.1.0.exe` 和
+  `release/milk-frogs-beast-bond-sutra-0.1.0-portable.exe`，各 178MB；app.asar 83MB + bg-removal 已正确解包。
+  首次打包因 GitHub 下 NSIS 超时失败，加 `.npmrc` 镜像后成功。
+- **环境限制**：本会话 shell 设了 `ELECTRON_RUN_AS_NODE=1` 且无浏览器，无法实测 Electron 窗口 / 网页交互，
+  交互部分（拖动、点笑、导入、抠图）需用户在本机跑起来看。
+
+### 待办
+- 用户本地实测网页版：`npm run preview:web`（拖动 / 点击大笑 / 导入图片）。
+- 网页版部署到静态托管时，抠图用的多线程 WASM 需要 HTTPS + `Cross-Origin-Isolation` 响应头（COOP/COEP），
+  需选支持自定义头的托管（Netlify / Cloudflare Pages 等）。
+- 抠图模型 88MB fp16 偏大，移动端建议换 `isnet_quint8`（约 44MB）并按需下载。
+- 打包版「一键抠图」在 file:// 协议下 fetch 模型可能受限（未实测），需用户跑打包版验证；其余功能不受影响。
+- 打包版目前用默认 Electron 图标，可后续加自定义 icon。
+
+### 风险说明（已知、已说明）
+- 网页版是「页面内浮动桌宠」，不是桌面透明置顶窗口（浏览器硬限制）。
+- 网页数据存浏览器 IndexedDB，不跨设备；iOS Safari 长时间不用可能清掉数据。
+- 打包版体积 178MB 主要来自内嵌抠图模型，属正常（换小模型可显著减小）。
+

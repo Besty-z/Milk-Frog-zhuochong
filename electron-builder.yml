@@ -1,0 +1,38 @@
+appId: com.milkfrog.beastbond
+productName: MilkFrogPet
+directories:
+  output: release
+
+# 只打包 electron-vite 构建出来的 out/ 和 package.json。
+# 主进程/预加载只依赖 electron 和 node 内置模块，渲染层已全部打包，
+# 所以运行时不需要 node_modules。
+files:
+  - out/**/*
+  - package.json
+  - "!node_modules/**/*"
+  - "!src/**/*"
+  - "!dist-web/**/*"
+  - "!release/**/*"
+  - "!**/*.map"
+
+# 抠图模型/运行时按「相对 index.html 的路径」加载，解包成真实文件，
+# 避免被塞进 asar 后按文件协议读不到。
+asar: true
+asarUnpack:
+  - out/renderer/bg-removal/**/*
+
+win:
+  target:
+    - nsis
+    - portable
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: 奶蛙桌宠
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+portable:
+  artifactName: ${name}-${version}-portable.${ext}

@@ -10,3 +10,11 @@ dist/
 
 # 抠图模型 + wasm（由 scripts/download-bg-model.mjs 和 scripts/setup-bg-removal.mjs 生成，不进 git）
 src/renderer/public/bg-removal/
+
+# electron打包输出
+release/
+win-unpacked/
+
+# 大模型文件（可选，如果onnx不需要进仓库）
+dist-web/bg-removal/*.onnx
+
