@@ -1474,3 +1474,37 @@ Windows 版桌宠和全部功能保留。
 - 网页数据存浏览器 IndexedDB，不跨设备；iOS Safari 长时间不用可能清掉数据。
 - 打包版体积 178MB 主要来自内嵌抠图模型，属正常（换小模型可显著减小）。
 
+---
+
+## 2026-10-16 — 修复网页版「抠图失败：Unexpected token '<'... is not valid JSON」
+
+### 现象
+网页版点抠图时报 `Unexpected token '<', "<!doctype"... is not valid JSON`。
+
+### 根因
+上一次提交 `f5a62fd`「修复网页版抠图失败问题」把部署目录里的模型**改错了名字**：
+`dist-web/bg-removal/resources.json` → `dist-web/model/config.json`（目录和文件名都改了）。
+但 `@imgly/background-removal@1.7.0` 的 `loadAsBlob` 硬编码 fetch `publicPath + "resources.json"`，
+`BackgroundRemoval.ts` 里 `publicPath` 仍是 `bg-removal/`。于是去 fetch `bg-removal/resources.json` 404，
+静态服务器 SPA 回退返回 `index.html`（200），`.json()` 解析 HTML 就报 `Unexpected token '<'`。
+
+### 修法
+1. 把 `dist-web/model/` 改回 `dist-web/bg-removal/`，`config.json` 改回 `resources.json`
+   （内容没动，纯改名，恢复库和代码期待的路径）。
+2. 删掉 `.gitignore` 里 `dist-web/bg-removal/*.onnx` 这一行——因为 `dist-web/` 是走 git 部署的，
+   onnx 必须进仓库，否则部署后抠图模型缺失。
+3. `vite.web.config.ts` 加 `preview.headers`（COOP/COEP），让本地 `npm run preview:web` 也能测抠图
+   （多线程 wasm 需要跨域隔离，部署版靠 `dist-web/_headers`）。
+
+### 验证（curl，无浏览器环境）
+- `vite preview` 起服务后：
+  - `GET /bg-removal/resources.json` → 200 `application/json`（不再是 index.html 回退）✅
+  - `GET /bg-removal/isnet_fp16.onnx` → 200，88152708 字节 ✅
+  - `GET /bg-removal/ort-wasm-simd-threaded.wasm` → 200 `application/wasm` ✅
+  - 首页和资源都带 `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` ✅
+- 交互仍无法在本环境实测（无浏览器），抠图效果需用户本地/部署后点一次确认。
+
+### 待办
+- 用户重新部署（提交 `dist-web/bg-removal/`）后在真机点一次「一键抠图」确认。
+- 仍然建议后续换 `isnet_quint8` 小模型，减小部署/下载体积。
+

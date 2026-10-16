@@ -16,4 +16,12 @@ export default defineConfig({
       input: resolve(__dirname, 'src', 'renderer', 'web.html'),
     },
   },
+  preview: {
+    headers: {
+      // 网页版抠图用 onnxruntime-web 的多线程 wasm，需要跨域隔离；
+      // 部署版靠 dist-web/_headers 生效，本地 `npm run preview:web` 也补上这两个头才能本地测抠图。
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
+  },
 })

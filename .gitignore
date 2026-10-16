@@ -15,6 +15,3 @@ src/renderer/public/bg-removal/
 release/
 win-unpacked/
 
-# 大模型文件（可选，如果onnx不需要进仓库）
-dist-web/bg-removal/*.onnx
-
