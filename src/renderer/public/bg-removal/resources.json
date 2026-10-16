@@ -1,0 +1,62 @@
+{
+  "/onnxruntime-web/ort-wasm-simd-threaded.wasm": {
+    "size": 12666427,
+    "mime": "application/wasm",
+    "chunks": [
+      {
+        "name": "ort-wasm-simd-threaded.wasm",
+        "offsets": [
+          0,
+          12666427
+        ]
+      }
+    ]
+  },
+  "/onnxruntime-web/ort-wasm-simd-threaded.mjs": {
+    "size": 26583,
+    "mime": "text/javascript",
+    "chunks": [
+      {
+        "name": "ort-wasm-simd-threaded.mjs",
+        "offsets": [
+          0,
+          26583
+        ]
+      }
+    ]
+  },
+  "/models/isnet_fp16": {
+    "size": 88152708,
+    "mime": "application/octet-steam",
+    "chunks": [
+      {
+        "name": "isnet_fp16.0.onnx",
+        "offsets": [
+          0,
+          22038177
+        ]
+      },
+      {
+        "name": "isnet_fp16.1.onnx",
+        "offsets": [
+          22038177,
+          44076354
+        ]
+      },
+      {
+        "name": "isnet_fp16.2.onnx",
+        "offsets": [
+          44076354,
+          66114531
+        ]
+      },
+      {
+        "name": "isnet_fp16.3.onnx",
+        "offsets": [
+          66114531,
+          88152708
+        ]
+      }
+    ]
+  }
+}
