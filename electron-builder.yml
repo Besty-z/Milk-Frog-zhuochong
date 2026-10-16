@@ -15,6 +15,12 @@ files:
   - "!release/**/*"
   - "!**/*.map"
 
+# 图标/托盘图：打包时复制到 <安装目录>/resources/resources/，
+# 主进程用 process.resourcesPath 读（nativeImage/Tray 读 asar 里的文件不可靠）。
+extraResources:
+  - from: resources
+    to: resources
+
 # 抠图模型/运行时按「相对 index.html 的路径」加载，解包成真实文件，
 # 避免被塞进 asar 后按文件协议读不到。
 asar: true

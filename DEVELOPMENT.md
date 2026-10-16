@@ -1535,3 +1535,36 @@ Cloudflare Pages **限制单个文件 ≤ 25 MiB**（官方文档）。`isnet_fp
 - 部署后在浏览器控制台确认 `crossOriginIsolated === true`（`_headers` 的 COOP/COEP 是否生效），
   否则多线程 wasm 会报 SharedArrayBuffer 相关错误。
 
+---
+
+## 2026-10-16 — 打包 exe「没有主页」：托盘图标没打进去
+
+### 现象
+下载安装 exe 后只看到桌宠本体（透明小青蛙），找不到「首页」配置窗口。
+
+### 根因（两层）
+1. 设计上「首页」就不是开机自动弹的：`src/main/index.ts` 的 `app.whenReady()` 只调了
+   `initPetWindow()` + `initPetAssets()`，从没调 `ensureHomeWindow()`。首页唯一入口是
+   系统托盘菜单「打开首页」。
+2. 但打包后连托盘都没有了：`electron-builder.yml` 的 `files` 只包含 `out/**/*` + `package.json`，
+   **没包含项目根目录 `resources/`**（`tray-16.png` / `icon.png`）。而 `PetWindow.ts` 的
+   `createTray()` 里 `nativeImage.createFromPath(join(__dirname, '../../resources/tray-16.png'))`
+   读不到文件 → `icon.isEmpty()` 为 true → 直接 `return`，托盘不创建。
+   开发时 `__dirname` 是 `out/main`，`../../resources/` 正好指到项目根目录所以正常；打包后失效。
+
+### 修法
+- 新增 `src/main/resourcePath.ts`：用 `app.isPackaged` 区分两种环境——打包后读
+  `process.resourcesPath/resources/...`，开发读 `../../resources/...`。
+- `electron-builder.yml` 加 `extraResources: { from: resources, to: resources }`，把 `resources/`
+  复制到安装目录（解包成真实文件；nativeImage/Tray 读 asar 里文件不可靠，必须 extraResources）。
+- `PetWindow.ts` / `HomeWindow.ts` 的图标路径改用 `resourcePath('tray-16.png' | 'icon.png')`。
+
+### 验证
+- `npx tsc --noEmit` 通过（无类型错误）。
+- 需用户重新 `npm run dist` 打包后实测：运行后任务栏右下角应出现托盘图标，
+  右键 →「打开首页」能弹出配置窗口。
+
+### 待办
+- 用户重新打包 exe 并验证托盘 + 首页。
+- 可选：若希望「双击启动就能直接看到首页」，可在 `index.ts` 首次启动时自动 `ensureHomeWindow()`（待用户确认是否要）。
+

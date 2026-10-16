@@ -1,5 +1,6 @@
 import { BrowserWindow, nativeImage } from 'electron'
 import { join } from 'node:path'
+import { resourcePath } from './resourcePath'
 
 // HomeWindow：桌宠「首页」窗口。一个普通带边框的配置窗口，
 // 从系统托盘「打开首页」进入，用来导入图片、管理动作和桌宠样式。
@@ -14,7 +15,7 @@ function createHomeWindow() {
     autoHideMenuBar: true,
     title: '桌宠首页',
     // 窗口/任务栏图标换成默认桌宠（小青蛙）。图标由 scripts/make-icon.ps1 生成。
-    icon: nativeImage.createFromPath(join(__dirname, '../../resources/icon.png')),
+    icon: nativeImage.createFromPath(resourcePath('icon.png')),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,

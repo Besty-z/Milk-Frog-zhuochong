@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, Menu, nativeImage, screen, Tray } from 'el
 import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { ensureHomeWindow } from './HomeWindow'
+import { resourcePath } from './resourcePath'
 
 // PetWindow：负责窗口本身的一切——创建、尺寸、位置保存、拖动移窗、
 // 点击穿透、系统托盘、「回到屏幕内」。渲染进程通过 IPC 调用这里的能力。
@@ -91,7 +92,7 @@ function createTray() {
     return
   }
 
-  const icon = nativeImage.createFromPath(join(__dirname, '../../resources/tray-16.png'))
+  const icon = nativeImage.createFromPath(resourcePath('tray-16.png'))
 
   if (icon.isEmpty()) {
     return
@@ -150,7 +151,7 @@ function createPetWindow() {
     hasShadow: false,
     backgroundColor: '#00000000',
     // Alt+Tab 切窗时显示成默认桌宠的样子（窗口本体透明，图标只在切窗列表里出现）
-    icon: nativeImage.createFromPath(join(__dirname, '../../resources/icon.png')),
+    icon: nativeImage.createFromPath(resourcePath('icon.png')),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
