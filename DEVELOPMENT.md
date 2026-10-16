@@ -1508,3 +1508,30 @@ Windows 版桌宠和全部功能保留。
 - 用户重新部署（提交 `dist-web/bg-removal/`）后在真机点一次「一键抠图」确认。
 - 仍然建议后续换 `isnet_quint8` 小模型，减小部署/下载体积。
 
+---
+
+## 2026-10-16 — Cloudflare 仍报同样错误：模型超 25MB 单文件上限
+
+### 根因
+Cloudflare Pages **限制单个文件 ≤ 25 MiB**（官方文档）。`isnet_fp16.onnx` 有 88MB，超上限，
+上传时整次部署被拒/失败，于是线上一直是旧的那套 `model/config.json`，`resources.json` 仍 404 → 回退 index.html → 同样的 `Unexpected token '<'`。
+
+### 修法
+- 把 88MB 的 `isnet_fp16.onnx` 切成 4 片（每片 22MB，低于 25MB），`resources.json` 里模型条目改成 4 个 chunk（`offsets` 按字节顺序累加）。
+  库 `@imgly/background-removal` 本身支持多 chunk：逐个 fetch `publicPath + chunk.name`、按 size 校验、再拼接，所以切分对它透明。
+- 重写 `scripts/setup-bg-removal.mjs`：自动切分 + 删除单个大文件（加重试 + 失败即报错）+ 从实际分片重建 `resources.json`。
+- 同步 `src/renderer/public/bg-removal/`（源，供本地/桌面构建）与 `dist-web/bg-removal/`（部署目录）。
+- 顺带把 wasm/mjs 重新从当前 node_modules 拷贝（wasm 从 11.8MB → 12.6MB，匹配当前 onnxruntime-web 版本）。
+
+### 验证（curl，无浏览器）
+- `vite preview` 起服务：
+  - `/bg-removal/resources.json` → 200 `application/json` ✅
+  - `/bg-removal/isnet_fp16.{0,1,2,3}.onnx` → 各 200，22,038,177 字节 ✅
+  - `/bg-removal/ort-wasm-simd-threaded.wasm` → 200 `application/wasm` ✅
+- 所有文件均 < 25MB，满足 Cloudflare Pages 单文件上限。
+
+### 待办
+- 用户提交 `dist-web/bg-removal/`（4 片 + resources.json，已无单个 88MB 文件）并重新部署。
+- 部署后在浏览器控制台确认 `crossOriginIsolated === true`（`_headers` 的 COOP/COEP 是否生效），
+  否则多线程 wasm 会报 SharedArrayBuffer 相关错误。
+
