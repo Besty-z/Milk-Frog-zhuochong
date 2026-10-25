@@ -60,10 +60,10 @@ function WebApp() {
         dragRef.current = null
       },
       hide() {
-        floatRef.current?.classList.add('web-pet--hidden')
+        floatRef.current?.classList.add('web-pet-float--hidden')
       },
       show() {
-        floatRef.current?.classList.remove('web-pet--hidden')
+        floatRef.current?.classList.remove('web-pet-float--hidden')
       },
     }
 

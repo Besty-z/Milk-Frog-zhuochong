@@ -1568,3 +1568,47 @@ Cloudflare Pages **限制单个文件 ≤ 25 MiB**（官方文档）。`isnet_fp
 - 用户重新打包 exe 并验证托盘 + 首页。
 - 可选：若希望「双击启动就能直接看到首页」，可在 `index.ts` 首次启动时自动 `ensureHomeWindow()`（待用户确认是否要）。
 
+---
+
+## 2026-10-16 — 修复网页版「隐藏 / 显示」无作用
+
+### 现象
+网页版首页快捷操作点「隐藏」「显示」，右下角浮动桌宠没有任何反应。
+
+### 根因
+类名不一致：
+- `WebApp.tsx` 的 PetController `hide()/show()` 增删的类名是 `web-pet--hidden`；
+- `web.css` 里定义的隐藏规则却是 `.web-pet-float--hidden { display: none; }`。
+
+两个名字对不上（`web-pet--hidden` ≠ `web-pet-float--hidden`），所以 `display:none` 从不生效，
+隐藏、显示都等于没做。
+
+### 修法
+把 `WebApp.tsx` 里的 `web-pet--hidden` 改成 `web-pet-float--hidden`，和容器 `.web-pet-float` 的
+BEM 命名（`块--修饰符`）以及 CSS 保持一致。桌面版（IPC `pet:hide`/`pet:show`）无此问题，不动。
+
+### 验证
+- `npm run typecheck` ✅。
+- 待用户 `npm run preview:web` 实测：点「隐藏」浮动桌宠消失、点「显示」恢复。
+
+---
+
+## 2026-10-25 — 建立通用智能体项目管理与交接文档体系
+
+### 背景
+用户要求让任何 AI 编程智能体都能快速理解项目、减少重复阅读，并在对话过长时能无缝交接。
+
+### 做了什么（纯文档，未改业务代码）
+- 重写 `README.md`：按真实项目状态更新（功能、技术栈、目录结构、命令、文档入口）。
+- 新增 `AGENTS.md`：通用智能体工作规则（开始/修改/验证/收尾、Token 控制、交接、新会话恢复）。
+- 新增 `PROJECT_CONTEXT.md`：架构、模块职责、关键文件、调用关系、数据持久化、踩坑记录。
+- 新增 `TASKS.md`：当前阶段、进行中、已完成、遗留问题、下一步（与 DEVELOPMENT.md 分工：本文件记历史，TASKS 记当前状态）。
+- 新增 `docs/HANDOFF.md`：最近一次交接记录，新会话从这里恢复。
+
+### 验证
+- 内容以实际代码为准（package.json / src 结构 / preload IPC / electron-builder.yml / 各模块文件），未编造。
+- 本次未改业务代码，未重跑 `npm run typecheck` / `build`（无必要）。
+
+### 待办 / 下一步
+- 用户确认文档分工是否符合预期；之后按 TASKS.md 继续（先完成网页版隐藏/显示修复的实测与提交）。
+
